@@ -1,0 +1,993 @@
+---
+title: "TEQ concentration predictions in 9-year-old boys in Finland"
+author: "Jouni Tuomisto"
+date: "15 tammikuuta 2020"
+output:
+  word_document: default
+  pdf_document:
+    fig_width: 7
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Model initiation
+
+This code initiates the model estimating TEQ values of individual boys with only PCB measurements.
+
+NOTE! This model has a problem that it first logtransforms the data and then makes a regression. The problem is that the sum of logtransformed regression parameters equals the product of original parameters. In the case of TEQ, this should be the sum or original paramters. Therefore, we should actually use the original rathern than logtransformed values and tell the model in another way that the values (PCBs and TEQs) are lognormally distributed. However, I haven't yet figured out a correct mathematical way to do this.
+
+
+```{r initiate}
+library(OpasnetUtils)
+library(reshape2)
+library(ggplot2)
+library(MASS)
+library(thlGraphs)
+
+# PCBs of interest (the order of decreasing correlation with SUM-TEQ will be determined automatically later)
+pcb9 <- c("PCB118","PCB138","PCB74","PCB156","PCB153","PCB99","PCB187","PCB170","PCB180")
+
+# "Seven marker PCBs": 28, 52, 101, 118, 138, 153, and 180
+# "Six marker PCBs": 28, 52, 101, 138, 153, and 180
+
+# Why are 28, 52, 101 missing from nine marker PCBs?
+# 52 and 101 were measured but too much <LOQ that they were omitted.
+# 28 was measured, too. Not known why it was not used.
+
+teq3 <- c("PCDDF_TEQ", "PCB_TEQ", "Total_TEQ")
+
+objects.latest("Op_en4017", "initiate") # [[Toxic equivalency factor]] TEF
+TEF <- EvalOutput(TEF)
+levels(TEF$Compound) <- toupper(levels(TEF$Compound))
+
+# Data from children in LUKAS and LASERI projects
+
+boys <- read.csv("NuorDiox-Individual-Data_Jouni_2019-10-16.csv", header=TRUE, sep=";", dec=",")
+boys <- boys[boys$Cohort != "", ] # Remove empty rows
+boys$Id <- 1:nrow(boys)
+boys$BirthYear <- as.integer(gsub(" ", "", as.character(boys$BirthYear)))
+boys <- boys[!(grepl("TEQ", colnames(boys)) | colnames(boys) %in%
+               c("Code","CohortClass","SexClass","FirstBorn","FirstBornClass",
+                 "AgeClass","Post_Office","VisitDate",""))]
+boys$year <- boys$Age + boys$BirthYear
+boys$Age <- factor(boys$Age, levels=c(7,8,9,10,17,18,19),
+                   labels=c(rep("7-9",3),"10", rep("17-19",3)))
+boys <- melt(boys, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","BirthYear", "year"),
+             variable.name="Compound",value.name="Result")
+Var <- factor(substr((boys$Compound), nchar(as.character(boys$Compound)),1000)) # F fat or V volume-based?
+boys <- boys[Var=="F",]
+boys$Compound <- factor(substr(boys$Compound, 1, nchar(as.character(boys$Compound))-2))
+boys <- boys[boys$Compound!="PCB9",] # SUM9PCB removed as redundant
+
+# Data from mothers in WHO mothers' milk project 2000-2010
+
+### THERE ARE MORE MOTHERS HERE THAN IN THE NEWER DATA! WHY?
+#momsb <- read.csv("Äidinmaidot-primipara_2000-2010_yhteenveto_all.csv", header=TRUE, sep=";", dec=",", stringsAsFactors = FALSE)
+
+moms <- read.csv("Äidinmaidot-kaikki_yhteenveto-SPSS-Siirto_2019-10-16.csv",
+                 skip=5, header=TRUE, sep=";", dec=",", stringsAsFactors = FALSE)
+moms <- moms[!is.na(moms$year),] # Remove empty rows from end
+colnames(moms)[colnames(moms)=="id"] <- "Id"
+colnames(moms)[colnames(moms)=="mage"] <- "Age"
+colnames(moms)[colnames(moms)=="parity"] <- "Parity"
+moms <- moms[!colnames(moms) %in% c("X","X.1","X.2","X.3","X.4","X.5",  # Remove empty columns
+            "PCDD.F.2005TEQ","PCB.2005.TEQ","Total.TEQ","Sum_IndPCB","Sum_PCB9")] # Remove non-original columns
+
+moms <- moms[!grepl("(BDE|PCN|DDD|DDE|DDT|PCB80|PCB122|PCB159)", colnames(moms))] # There is no data for PCB80,122,159
+
+moms$Cohort <- "WHO mothers' milk"
+moms$Center <- factor(ifelse(grepl("R",moms$Id),"Rovaniemi",ifelse(grepl("K",moms$Id),"Kuopio","Helsinki")))
+moms$BirthYear <- moms$year - moms$Age
+moms$Age <- factor(moms$Age)
+moms$Sex <- "female"
+moms$Parity <- as.character(ifelse(moms$Parity<4,moms$Parity,4))
+
+moms <- melt(moms, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","BirthYear","year"),
+             variable.name="Compound",value.name="Result")
+levels(moms$Compound) <- toupper(gsub("(^X|\\.)","", levels(moms$Compound))) # Remove unnecessary variation from congener names
+
+# Add data from three pools of blood samples from the Finnish Red Cross
+
+men <- read.csv("SPR-Diox-PCB.csv", header=TRUE, sep=";", dec=",", skip=2, stringsAsFactors = FALSE)
+men <- men[men$Helsinki!="" , 1:4] # Remove empty rows and columns
+colnames(men)[1] <- "Compound"
+men$Compound <- toupper(trimws(gsub("(\\*|\\.|-|,)", "", men$Compound)))
+men <- melt(men, id.vars = "Compound", variable.name = "Center", value.name = "Result")
+
+# Adjust values below LOQ
+
+LOQ <- grepl("<", men$Result) 
+men$Result <- as.numeric(gsub(",",".",gsub("<","",men$Result)))
+men$Result[LOQ] <- men$Result[LOQ]/10 # Take the lower bound but don't use zero
+men$Id <- paste0("SPR_", men$Center)
+men$year <- 2019
+men$Cohort <- "SPR"
+men$Sex <- "male"
+men$Age <- "18-20"
+men$BirthYear <- 2000
+men$Parity <- "unknown"
+
+## Combine children, women and donors to a single dataframe
+
+pops <- rbind(
+  cbind(boys, Subgroup = "Child"),
+  cbind(moms, Subgroup = "Woman"),
+  cbind(men, Subgroup = "Donor")
+)
+colnames(pops)[colnames(pops)=="year"] <- "Year"
+
+pops$Parity[is.na(pops$Parity)] <- "unknown"
+
+pops <- EvalOutput(Ovariable("pops",data=pops))
+
+# Convert units from ng/g to pg/g where needed
+
+conv <- paste0("PCB", c(18,28,33,47,49,51,52,60,66,74,80,99,101,105,110,114,118,122,123,
+                128,138,141,153,156,157,167,170,180,183,187,189,194,206,209)) # ng/g; convert to pg/g
+
+result(pops)[pops$Compound %in% conv] <- result(pops)[pops$Compound %in% conv] * 1000 # ng/g --> pg/g
+
+# Adjust for LOQ if not detected. This applies to mothers only as men's <LOQs were replaced already and none in boys
+
+LOQ <- oapply(pops, c("Compound","Year"), function(x) min(x[x>0]))
+colnames(LOQ@output)[colnames(LOQ@output)=="popsResult"] <- "LOQResult"
+LOQ@name <- "LOQ"
+
+# LOQ <- LOQ     # Use upper-bound estimate
+# LOQ <- LOQ / 2 # Use medium-bound estimate
+LOQ <- LOQ / 10 # Use lower-bound estimate
+  
+pops <- pops + LOQ * (pops==0)
+
+# Calculate and add TEQ values to the data
+
+popteq <- pops * TEF
+
+tmp1 <- oapply(popteq[popteq$Group %in% c("Chlorinated dibenzo-p-dioxins", "Chlorinated dibenzofurans")],NULL,sum,c("Compound","Group"))
+tmp2 <- oapply(popteq[popteq$Group %in% c("Non-ortho-substituted PCBs", "Mono-ortho-substituted PCBs")],NULL,sum,c("Compound","Group"))
+tmp3 <- tmp1 + tmp2
+tmp1$Compound <- "PCDDF_TEQ"
+tmp2$Compound <- "PCB_TEQ"
+tmp3$Compound <- "Total_TEQ"
+
+pop <- OpasnetUtils::combine(pops, tmp1, tmp2, tmp3, name="pop")
+pop <- pop[!(pop$Subgroup=="Child" & pop$Compound=="PCB_TEQ") , ] # Remove because children do not have all PCBs
+
+#### Make pop_w with wide format congener table
+
+pop_w <- log(pop)
+
+pop_w <-  reshape(
+  pop_w@output[
+    pop_w$Age != "17-19" & pop_w$Compound %in% c(pcb9, teq3) , # Remove adult patients from LASERI
+    c("Id","Subgroup","Compound","popResult")],
+  v.names = "popResult",
+  idvar="Id",
+  timevar = "Compound",
+  direction="wide")
+colnames(pop_w) <- gsub("popResult.", "", colnames(pop_w))
+
+###### Add rows for Women and Donors without TEQ so that predictions are made
+
+pop_w <- rbind(
+  pop_w,
+  cbind(Subgroup=paste0(pop_w$Subgroup,"_pred"), pop_w[colnames(pop_w)!="Subgroup"])
+)
+pop_w[grepl("_pred",pop_w$Subgroup),teq3] <- NA
+
+```
+
+## Descriptive statistics with adult patients from LASERI
+
+```{r plots}
+
+ggplot(pop@output[pop$Subgroup=="Child",], aes(x=popResult, colour=Center))+stat_ecdf()+scale_x_log10()+
+  facet_wrap(~Compound)+
+  labs(title="PCB congener concentrations in children")
+
+ggplot(pop@output[pop$Subgroup=="Woman" & pop$Compound %in% c(pcb9, teq3),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
+  facet_wrap(~Compound, scales="free_x")+
+  labs(title="PCB and TEQ concentrations in mothers")
+
+ggplot(pop@output[pop$Subgroup=="Woman" & !grepl("PCB",pop$Compound),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
+  facet_wrap(~Compound, scales="free_x")+
+  labs(title="PCDD/F concentrations in mothers")
+
+ggplot(pop@output[pop$Compound %in% pcb9 , ], aes(x=popResult, colour=factor(Year), linetype=Subgroup))+stat_ecdf()+scale_x_log10()+
+  facet_wrap(~Compound, scales="free_x")
+
+library(psych)
+pairs.panels(pop_w[c(pcb9,teq3)], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+
+```
+
+We can see that the distributions are mostly in line with lognormal distributions, but with some problems related to missing values. In boys' data, many congeners show that although the lowest values are comparable in Kuopio and elsewhere, other centers have clearly less of moderately low values, and the median is 50-100 % higher than in Kuopio.
+
+The fraction of values below LOQ is very large in 12378PeCDF 123478HxCDD, 1234789HpCDF, and OCDF. The detection level has improved for several congeners and brought the fraction of samples below LOQ down: 2378TCDF, 12378PECDF, 123789HXCDF, 1234789HPCDF.
+
+## Linear regression analyses for model comparison
+
+We wanted to find an effective way to predict total TEQ (PCDD/F+PCB) concentration in situations where only PCB concentrations are available. This was done by studying properties of several linear regressions and identifying the best one for the data available. 
+
+Because the concentration distributions had a reasonable fit with lognormal distributions, all concentrations we log-transformed. Three different TEQ values were used as the dependent variable: PCDD/F TEQ, PCB TEQ and total TEQ. First, TEQ values were predicted using linear regression (lm function in R statistical software version 3.5.3) and PCB concentrations as independent variables, one at a time. Based on the adjusted R squared values of the total TEQ models, PCB congeners were sorted to decreasing order. Second, PCB congeners were added to the regressions as independent variables one by one until all congeners were in a model. Third, rather than using individual congeners, the congeners were summed up and the sum was used as the only independent variable. Fourth, all
+congeners and all different sums were added to a regression model and two-way inclusion-exclusion approach with Aitken Information Criteria was used to identify the most informative set of independent variables.
+
+```{r regressions}
+#Explanatory power of different models (linear regression)
+
+stati <- data.frame()
+
+# 1. Model using a single independent variable
+
+for(j in teq3) {
+  for(i in pcb9) {
+    dep <- i
+    stati <- rbind(
+      stati,
+      data.frame(
+        Model = "single",
+        Dependent = j,
+        Independents = dep,
+        AdjR = summary(lm(as.formula(paste(j, "~", dep)), data = pop_w))[["adj.r.squared"]]
+      )
+    )
+  }
+}
+
+##### Sort pbc9 to match the explanatory power
+
+pcb9 <- stati[stati$Model=="single" & stati$Dependent=="Total_TEQ",]
+pcb9 <- as.character(pcb9$Independents[order(-pcb9$AdjR)])
+
+stati$Independents <- factor(stati$Independents, levels=pcb9)
+
+
+# 2. Model using all independent variables up to the one mentioned
+
+for(j in teq3) {
+  for(i in 1:length(pcb9)) {
+    dep <- pcb9[1:i]
+    stati <- rbind(
+      stati,
+      data.frame(
+        Model = "all-up-to",
+        Dependent = j,
+        Independents = pcb9[i],
+        AdjR = summary(lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data = pop_w))[["adj.r.squared"]]
+      )
+    )
+  }
+}
+
+# 3. Model using a sum of all up to the one mentioned
+
+for(j in teq3) {
+  for(i in 1:length(pcb9)) {
+    pop_w$tmp <- rowSums(pop_w[pcb9[1:i]])
+    stati <- rbind(
+      stati,
+      data.frame(
+        Model="sum-up-to",
+        Dependent = j,
+        Independents = pcb9[i],
+        AdjR = summary(lm(as.formula(paste(j, "~ tmp")), data = pop_w))[["adj.r.squared"]]
+      )
+    )
+  }
+}
+
+# [1] "PCDDF_TEQ" "PCB_TEQ"   "Total_TEQ"
+levels(stati$Dependent) <- c("PCDD/F TEQ", "PCB TEQ", "Total TEQ")
+
+ggplot(stati, aes(x=Independents, y=AdjR, color=Model, group=Model))+geom_line(size=1.5)+theme(axis.text.x=element_text(angle=90, vjust=0.5))+
+  facet_grid(.~Dependent)+
+  scale_color_manual(values=c("#7bc143","#2f62ad","#be3f72"))+
+  labs(
+#    title="Explanatory power of PCB combinations on TEQ",
+    subtitle="Adjusted R-squared",
+    y="",
+    x="PCB congener"
+  )+
+  thlTheme(legend.position="bottom", x.axis.title = TRUE, base.size=22)
+
+ggsave("Explanatory_power_of_PCB_on_TEQ.png",width=16/2.54, height=18/2.54)
+
+# 4. Model using AIC to find the best set of variables from congeners and congener sums
+
+for(j in teq3) {
+  dep <- pcb9
+  mod <- lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data=na.omit(pop_w[c(j, pcb9)]))
+  print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
+}
+
+# 5. Model using AIC to find the best set of variables from congeners and all two-way interaction terms
+
+for(j in teq3) {
+  dep <- c(pcb9)
+  mod <- lm(as.formula(paste(j, "~ (", paste(dep,collapse=" + "), ")^2")), data=pop_w)
+  print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
+
+}
+
+```
+
+## Additional regression analyses
+
+```{r addregressions, include=FALSE}
+if(FALSE) {
+# PCB TEQ model
+mod <- lm(PCB_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year + Parity,
+           data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+
+# PCDD/F TEQ model
+mod <- lm(PCDDF_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year + Parity,
+           data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+
+# Total TEQ model
+mod <- lm(Total_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year + Parity,
+          data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+}
+
+```
+
+## Linear regression sensitivity analysis without Kuopio, Year and Parity
+
+```{r sensitivity, include=FALSE}
+if(FALSE) {
+# PCB TEQ model selsitivity analysis: are Kuopio, Year and Parity important?
+mod <- lm(PCB_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187,
+           data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+
+# PCDD/F TEQ model sensitivity analysis: are Kuopio, Year and Parity important?
+mod <- lm(PCDDF_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187,
+           data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+
+# Total TEQ model sensitivity analysis: are Kuopio, Year and Parity important?
+mod <- lm(Total_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187,
+          data = pop_w)
+summary(stepAIC(mod, direction = "both", trace = FALSE))
+}
+
+```
+
+We can make several conslusions based on the additional regression model results. Data is not shown here because we decided to put these model comparison issues to another manuscript and only focus on PCB9 model here.
+
+1. As expected, regression finds a perfect fit when all consituents of a TEQ value are present.
+2. Year shows up in every model implying that the PCB profile changes in time.
+3. Parity is not important determinant in models given PCB concentrations. This implies that although it affects the absolute concentrations, it does not affect congener profile in a way that would affect TEQ estimates. This is also seen in the graph above: all congeners show the same slightly decreasing trend with parity.
+4. City shows up in the models implying that there are differences in congener profiles between cities.
+5. If Kuopio and Year are included, PCB138 drops out, but if not, then PCB 153 drops out. This implies that PCB138 contains important information that is associated with Year and location. This should be studied more.
+6. SUM9PCB never shows up in any model, indicating that individual congeners do much better work in predicting TEQs. This is not surprising because a lot of information is lost when summing things up.
+7. When we look at the distributions of congener concentrations scaled by SUM9PCB, there are very little differences between moms and boys. This implies that the congener profile derived from moms is a fair representation of congener profile in boys. However, this conclusion is based on PCB alone, because there are no data about PCDD/F in boys.
+8. A hypothesis is that the most recent mothers' milk data should be used rather than the whole data, because that would temporally reflect the children's data more precisely. However, when the regressions model analysis is run with the newest (2010) data only (data not shown), the regression fits are clearly poorer: R^2^ values are 82, and 76, and 82 % rather than 87, 82, and 87 % for PCB, PCDD/F, and Total TEQ, respectively. Therefore, we will use the whole WHO data.
+9. Data about Kuopio and Year are important: linear regression fit drops from 87 to 87 % for PCB TEQ if they are omitted,  82 to 75 % for PCDD/F, and from 87 to 83 % for Total TEQ.
+10. The R^2^ fit is somewhat poorer with Bayesian model because it did not use data about Kuopio and Year in analysis: 67, 67, and 76 % for 2010 data only and 75, 75, and 82 % for all WHO data, respectively.
+
+
+## Bayesian hierachical model
+
+```{r bayes}
+# This was forked from code Op_en3104/bayes on page [[EU-kalat]]
+
+library(OpasnetUtils)
+library(reshape2)
+library(rjags) # JAGS
+library(ggplot2)
+library(MASS) # mvrnorm
+library(car) # scatterplotMatrix
+
+N <- 500
+
+# Hierarchical Bayes model.
+
+mod <- textConnection(
+  "
+  model{
+    for(j in C) { # TEQ columns, after pcb9 columns
+      for(i in S) { # S = human sample
+    #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
+
+      mu[i,j] <-  b[j,1]*conc[i,1] + b[j,2]*conc[i,2] + b[j,3]*conc[i,3] +
+                  b[j,4]*conc[i,4] + b[j,5]*conc[i,5] + b[j,6]*conc[i,6] +
+                  b[j,7]*conc[i,7] + b[j,8]*conc[i,8] + b[j,9]*conc[i,9] 
+      }
+    for(k in K) {
+      b[j,k] ~ dnorm(0, 0.0001) # Congener-specific coefficient to calculate different TEQs
+    }
+    }
+    tau[1] ~ dgamma(1.0E-3, 1.0E-3)
+    tau[2] ~ dgamma(1.0E-3, 1.0E-3)
+    for(i in S) {
+      teq[i,1] ~ dnorm(mu[i,1], tau[1])
+      teq[i,2] ~ dnorm(mu[i,2], tau[2])
+    }
+  }
+")
+
+jags <- jags.model(
+  mod,
+  data = list(
+    S = 1:nrow(pop_w),
+    C = 1:2,
+    K = 1:length(pcb9),
+    conc = data.matrix(pop_w[pcb9]), 
+    teq = data.matrix(pop_w[teq3])
+  ),
+  n.chains = 4,
+  n.adapt = 1000
+)
+
+samps.j <- jags.samples(
+  jags, 
+  c(
+    'mu', 
+    'tau',
+    'b',
+    'teq'
+  ), 
+  thin=100,
+  N*100
+)
+
+```
+
+The Bayes model is now run. PCDD/F TEQ is taken as the target TEQ.
+
+```{r}
+
+# Postprocess the model output
+
+dimnames(samps.j$b) <- list(TEQ = teq3[1:2], Compound = pcb9, Iter = 1:N, Chain = 1:4)
+dimnames(samps.j$mu) <- list(Id = 1:nrow(pop_w), TEQ = paste0(teq3[1:2], "_mu"), Iter = 1:N, Chain = 1:4)
+dimnames(samps.j$tau) <- list(TEQ = teq3[1:2], Iter = 1:N, Chain = 1:4)
+dimnames(samps.j$teq) <- list(Subgroup = pop_w$Subgroup, TEQ = paste0(teq3, "_pred"), Iter = 1:N, Chain = 1:4)
+
+samps.j$teq[,3,,] <- apply(samps.j$teq[,1:2,,],c(1,3,4), function(x) log(sum(exp(x)))) # Fill in Total_TEQ slot in TEQ
+
+# The the PCDDF_TEQ as the main outcome
+
+out <- cbind(
+  pop_w,
+  exp(apply(samps.j$mu, MARGIN=c("Id","TEQ"), FUN=mean)),
+  exp(apply(samps.j$teq, MARGIN=c("Subgroup","TEQ"), FUN=mean)),
+  exp(t(apply(samps.j$teq[,1,,], MARGIN=c("Subgroup"), FUN=function(x) quantile(x, probs = c(0.05,0.5,0.95))))),
+  exp(t(apply(samps.j$teq[,2,,], MARGIN=c("Subgroup"), FUN=function(x) quantile(x, probs = c(0.05,0.5,0.95))))),
+  exp(t(apply(samps.j$teq[,3,,], MARGIN=c("Subgroup"), FUN=function(x) quantile(x, probs = c(0.05,0.5,0.95))))),
+  Sample = exp(apply(samps.j$teq[,,,], MARGIN=c("Subgroup","TEQ"), FUN=function(x) sample(x, size=1))),
+  P_exceed = apply(samps.j$teq[,,,], MARGIN=c("Subgroup","TEQ"), FUN=function(x) mean(x>log(7)))
+)
+
+out[c(pcb9,teq3)] <- exp(out[c(pcb9,teq3)]) # Convert the original data back to arithmetic scale
+
+############# Calculate confidence intervals for the cumulative sample distribution
+# This calculation is based on the wrong assumption that you could
+# Sort random samples of n individuals and calculate confidence intervals for each quantile.
+# This cannot be done because you create bias if you fisrt sort and then get a discribution,
+# because the highest quantiles are first selected for being high numbers, and then taking an uppoer
+# limit of that will produce double upper limits
+#
+# Instead, you either have to calculate vertical uncertainties using pointwise or simultaneous bands.
+# Neither of these is what we want here, becaues our focus is on actual individuals more than 
+# on the distribution. Therefore, this calculation is not used.
+# https://stats.stackexchange.com/questions/181724/confidence-intervals-for-ecdf
+# https://en.wikipedia.org/wiki/CDF-based_nonparametric_confidence_interval
+
+if(FALSE) {
+samp <- exp(samps.j$teq[,,,1]) #[grepl("Child_pred", names(samps.j$teq[,1,1,1])),,,1])
+samp <- melt(samp)
+samp$Order <- NA
+tst <- factor(paste(samp$TEQ,samp$Iter))
+
+for(i in unique(tst)) {
+  samp$Order[tst == i] <- rank(samp$value[tst == i])
+}
+
+ggplot(samp[samp$Subgroup == "Child_pred",], aes(x=value, color=TEQ))+stat_ecdf()+
+  geom_vline(xintercept = 7)+
+  scale_x_log10()
+
+samp <- t(sapply(unique(samp$Order), FUN = function(x) quantile(samp$value[samp$Order==x], probs = c(0.05, 0.5, 0.95))))
+colnames(samp) <- gsub("%", "", paste0("Cumul", colnames(samp)))
+
+out <- cbind(out, samp)
+} # END IF
+
+#### Move predictions to their right places
+
+out[!grepl("_pred", out$Subgroup) , grepl("(_pred|%)", colnames(out))] <- 
+  out[grepl("_pred", out$Subgroup) , grepl("(_pred|%)", colnames(out))]
+colnames(out)[grepl("%", colnames(out))] <- c("PCDDF_P05", "PCDDF_P50", "PCDDF_P95", "PCB_P05","PCB_P50", "PCB_P95",
+                                              "SUM_P05", "SUM_P50","SUM_P95")
+out <- out[!grepl("_pred", out$Subgroup),]
+
+out <- merge(out, unique(pop@output[c("Id","Cohort","Sex","Age","Center","Parity","BirthYear","Year")]))
+
+```
+
+### Comparing measured and predicted values
+
+```{r compare}
+
+lin <- function(df) {df <- na.omit(df); df <- c(min(df), max(df)); data.frame(x=df, y=df)}
+
+ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_TEQ_pred")]), aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted PCDDF TEQ")
+
+ggplot(out, aes(x=PCDDF_TEQ, y=Sample.PCDDF_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","Sample.PCDDF_TEQ_pred")]), aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted PCDDF TEQ")
+
+ggplot(out, aes(x=PCB_TEQ, y=PCB_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCB_TEQ","PCB_TEQ_pred")]),aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted PCBTEQ")
+
+ggplot(out, aes(x=PCB_TEQ, y=Sample.PCB_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCB_TEQ","Sample.PCB_TEQ_pred")]),aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted PCBTEQ")
+
+ggplot(out, aes(x=Total_TEQ, y=Total_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("Total_TEQ","Total_TEQ_pred")]),aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted Total TEQ")
+
+ggplot(out, aes(x=Total_TEQ, y=Sample.Total_TEQ_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("Total_TEQ","Sample.Total_TEQ_pred")]),aes(x=x, y=y),color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="Measured and predicted Total TEQ")
+
+ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, colour=Year))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
+  scale_x_log10()+scale_y_log10()+
+  labs(
+    title="Prediction accuracy for PCDD/F TEQ",
+    subtitle="Predicted TEQ (pg/g fat)",
+    y="",
+    x="Measured TEQ (pg/g fat)")
+
+
+#### Figure b for measured vs predicted TEQs in adults
+
+tmp <- out[out$Subgroup %in% c("Woman","Donor"),]
+tmp$Subgroup <- factor(tmp$Subgroup, levels=c("Woman","Donor"), labels= c("Breast milk samples","Male blood donor samples"))
+
+fig1b <- 
+ggplot(tmp, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, colour=Subgroup))+geom_point()+
+  geom_line(data=lin(tmp[c("PCDDF_TEQ","PCDDF_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
+  geom_point(data=out[out$Subgroup=="Donor",], aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred),
+             colour="#be3f72", size=5, shape=1, stroke=2)+
+  scale_color_manual(values=c("#7bc143", "#be3f72"))+
+  scale_x_log10()+scale_y_log10()+
+  thlTheme(legend.position="bottom", x.axis.title = TRUE)+
+  labs(
+#    title="Prediction accuracy for PCDD/F TEQ",
+    subtitle="Predicted PCDD/F TEQ concentration, pg/g fat",
+    y="",
+    x="Measured PCDD/F TEQ concentration, pg/g fat")
+
+fig1bdata <- fig1b$data[c("Subgroup","PCDDF_TEQ","PCDDF_TEQ_pred")]
+write.csv(fig1bdata, "fig1bdata.csv")
+fig1b
+
+oprint(fig1bdata[fig1bdata$Subgroup=="Male blood donors",])
+
+ggsave("Predicted PCDDF TEQ.png", width=16/2.54, height=18/2.54)
+
+fig2b <- 
+ggplot(tmp, aes(x=Total_TEQ, y=Total_TEQ_pred, colour=Subgroup))+geom_point()+
+  geom_line(data=lin(tmp[c("Total_TEQ","Total_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
+  geom_point(data=out[out$Subgroup=="Donor",], aes(x=Total_TEQ, y=Total_TEQ_pred),
+             colour="#be3f72", size=5, shape=1, stroke=2)+
+  scale_color_manual(values=c("#7bc143", "#be3f72"))+
+  scale_x_log10()+scale_y_log10()+
+  thlTheme(legend.position="bottom", x.axis.title = TRUE)+
+  labs(
+#    title="Prediction accuracy for Total TEQ",
+    subtitle="Predicted total TEQ concentration, pg/g fat",
+    y="",
+    x="Measured total TEQ concentration, pg/g fat")
+
+fig2bdata <- fig2b$data[c("Subgroup","Total_TEQ","Total_TEQ_pred")]
+write.csv(fig2bdata, "fig2bdata.csv")
+fig2b
+
+oprint(fig2bdata[fig2bdata$Subgroup=="Male blood donors",])
+
+ggsave("Predicted Total TEQ.png", width=16/2.54, height=18/2.54)
+
+cat("R^2^ for PCDD/F TEQ measured and predicted\n")
+cor(log(out[c("PCDDF_TEQ", "PCDDF_TEQ_pred")]), use="pairwise.complete.obs")^2
+
+cat("R^2^ for PCB TEQ measured and predicted\n")
+cor(log(out[c("PCB_TEQ", "PCB_TEQ_pred")]), use="pairwise.complete.obs")^2
+
+cat("R^2^ for Total TEQ measured and predicted\n")
+cor(log(out[c("Total_TEQ", "Total_TEQ_pred")]), use="pairwise.complete.obs")^2
+
+# Why are the R^2 values so poor? With linear regression, they are ca 0.85, with Bayesian model ca 0.65.
+
+```
+
+Figure 1. Measured versus predicted PCDD/F TEQ (right), and cumulative distribution of individual predicted values (left; green: median estimate, blue: random draw from individual probability distribution, gray: 90 % confidence interval of individual estimates). The left panel shows adults and the right panel shows children in general Finnish population. A red one-to-one line is shown for comparison.
+
+Figure 2. Measured versus predicted total TEQ (right), and cumulative distribution of individual predicted values (left; green: median estimate, blue: random draw from individual probability distribution, gray: 90 % confidence interval of individual estimates). The left panel shows adults and the right panel shows children in general Finnish population. A red one-to-one line is shown for comparison.
+
+Model is fairly good at predicting measured results, R^2^ values are 65 % or more.
+
+### Predicted TEQ concentrations
+
+```{r}
+
+library(thlGraphs)
+
+ggplot(out)+
+  stat_ecdf(aes(x=PCDDF_TEQ_pred, colour=Subgroup, linetype="Expectation"))+
+  stat_ecdf(aes(x=PCDDF_P05, colour=Subgroup, linetype="90 % CI"))+
+  stat_ecdf(aes(x=PCDDF_P50, colour=Subgroup, linetype="Median"))+
+  stat_ecdf(aes(x=PCDDF_P95, colour=Subgroup, linetype="90 % CI"))+
+  geom_vline(xintercept=7, colour="red")+
+  scale_x_log10()+
+  labs(title="Predicted and confidence interval")
+
+# https://stackoverflow.com/questions/20277658/how-to-combine-stat-ecdf-with-geom-ribbon
+
+tmp <- out[out$Subgroup=="Child",]
+
+
+```
+
+### Cumulative distributions of modelled concentrations
+
+```{r}
+#### Figures with cumulative distributions, including individual uncertainties
+
+### Children sorted based on random value
+# These calculations were removed because the audience thought they were confusing
+
+### Children sorted based on expected value
+
+tmp <- tmp[order(tmp$PCDDF_TEQ_pred),]
+tmp$x_pcddf <- seq(0,1,1/(nrow(tmp)-1))
+
+tmp$x <- seq(
+  min(tmp[c("PCDDF_P05","Sample.PCDDF_TEQ_pred","PCDDF_P95")]),
+  max(tmp[c("PCDDF_P05","Sample.PCDDF_TEQ_pred","PCDDF_P95")]),
+  length.out = nrow(tmp))
+
+lo <- ecdf(tmp$PCDDF_P95)
+up <- ecdf(tmp$PCDDF_P05)
+tmp$lower1 <- lo(tmp$x)
+tmp$upper1 <- up(tmp$x)
+
+fig1a <- 
+ggplot(tmp) + 
+#  geom_ribbon(aes(x=x, ymin = upper1,ymax = lower1),alpha = 0.8, fill="#dcdfe2") +
+  geom_path(aes(x=PCDDF_P05, y=x_pcddf), colour="#7bc143")+
+  geom_path(aes(x=PCDDF_P95, y=x_pcddf), colour="#7bc143")+
+  geom_line(data=data.frame(
+    Id = rep(tmp$Id,2),
+    Conc = c(tmp$PCDDF_P05, tmp$PCDDF_P95),
+    y = rep((1:nrow(tmp))/nrow(tmp),2))[seq(1,nrow(tmp)*2,4),], # Thin the CI so that you can see the lines
+    aes(x=Conc, y=y, group=Id),
+    size=0.05, colour="#7bc143")+
+  geom_line(aes(x = PCDDF_TEQ_pred, y=x_pcddf, colour="Expected value and 5-95% CI"), size=1.5) + 
+  stat_ecdf(aes(x = Sample.PCDDF_TEQ_pred, colour="Random draw"), size=1.5, geom="point") + 
+#  geom_point(aes(x = Sample.PCDDF_TEQ_pred, y=x_pcddf, colour="Random draw"), size=1.5) + 
+  geom_vline(aes(xintercept=7, colour="NOAEL 7 pg/g fat"), size=1)+
+  coord_cartesian(xlim=c(0.1,10))+
+  scale_color_manual(values=c(
+    `Expected value and 5-95% CI`="#7bc143",
+    `Random draw`="#2f62ad",
+    `NOAEL 7 pg/g fat`="#be3f72"),
+    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"))+
+  scale_x_log10()+
+  thlTheme(legend.position="bottom", x.axis.title=TRUE, base.size=22)+
+  labs(
+#    title="TEQ concentration in children in Finland",
+    subtitle="Cumulative probability",
+    y="",
+    x="Predicted PCDD/F TEQ concentration, pg/g fat"
+  )
+
+fig1a
+ggsave("PCDDF TEQ concentration distribution.png", width=16/2.54, height=18/2.54)
+
+```
+
+```{r}
+
+#7bc143 Vaaleanvirheä
+#29a0c1 syaaninsininen
+#2f62ad tummansininen 
+#519b2f tummanvihreä
+#be3f72 rubiininpunainen
+#cc77ac roosa
+#faa61a oranssi
+#606060 tumma harmaa
+#c3c2c6 keskiharmaa
+#dcdfe2 vaaleanharmaa
+
+fig1adata <- fig1a$data[c("x","upper1","lower1","PCDDF_TEQ_pred","Sample.PCDDF_TEQ_pred")]
+write.csv(fig1adata, "fig1adata.csv")
+
+cat("Median values of data columns\n")
+lapply(fig1adata, median)
+
+#### Figure 2 with Total TEQ
+
+tmp$x <- seq(
+  min(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  max(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  length.out = nrow(tmp))
+
+lo <- ecdf(tmp$SUM_P95)
+up <- ecdf(tmp$SUM_P05)
+tmp$lower1 <- lo(tmp$x)
+tmp$upper1 <- up(tmp$x)
+
+tmp <- tmp[order(tmp$Total_TEQ_pred),]
+tmp$y_total <- seq(0,1,1/(nrow(tmp)-1))
+
+tmp$x <- seq(
+  min(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  max(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  length.out = nrow(tmp))
+
+lo <- ecdf(tmp$SUM_P95)
+up <- ecdf(tmp$SUM_P05)
+tmp$lower1 <- lo(tmp$x)
+tmp$upper1 <- up(tmp$x)
+
+fig2a <- 
+ggplot(tmp) + 
+  geom_path(aes(x=SUM_P05, y=y_total), colour="#7bc143")+
+  geom_path(aes(x=SUM_P95, y=y_total), colour="#7bc143")+
+  geom_line(data=data.frame(
+    Id = rep(tmp$Id,2),
+    Conc = c(tmp$SUM_P05, tmp$SUM_P95),
+    y = rep((1:nrow(tmp))/nrow(tmp),2))[seq(1,nrow(tmp)*2,4),], # Thin the CI so that you can see the lines
+    aes(x=Conc, y=y, group=Id),
+    size=0.05, colour="#7bc143")+
+  geom_line(aes(x = Total_TEQ_pred, y=y_total, colour="Expected value and 5-95% CI"), size=1.5) + 
+  stat_ecdf(aes(x = Sample.Total_TEQ_pred, colour="Random draw"), size=1.5, geom="point") + 
+  geom_vline(aes(xintercept=7, colour="NOAEL 7 pg/g fat"), size=1)+
+  coord_cartesian(xlim=c(0.1,10))+
+  scale_color_manual(values=c(
+    `Expected value and 5-95% CI`="#7bc143",
+    `Random draw`="#2f62ad",
+    `NOAEL 7 pg/g fat`="#be3f72"),
+    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"))+
+  scale_x_log10()+
+  thlTheme(legend.position="bottom", x.axis.title=TRUE, base.size=20)+
+  labs(
+    subtitle="Cumulative probability",
+    y="",
+    x="Predicted total TEQ concentration, pg/g fat"
+  )
+
+fig2adata <- fig2a$data[c("x","upper1","lower1","Total_TEQ_pred","Sample.Total_TEQ_pred")]
+write.csv(fig2adata, "fig2adata.csv")
+fig2a
+cat("Median values of data columns\n")
+lapply(fig2adata, median)
+
+ggsave("Total TEQ concentration distribution.png", width=16/2.54, height=18/2.54)
+
+ggplot(tmp) + 
+  geom_ribbon(aes(x=x, ymin = upper1,ymax = lower1),alpha = 0.8, fill="#dcdfe2") +
+  stat_ecdf(aes(x = Total_TEQ_pred, colour="Expectation"), size=1.5) + 
+  stat_ecdf(aes(x = Sample.Total_TEQ_pred, colour="Random draw"), size=1.5) + 
+  geom_vline(xintercept=7, colour="#be3f72", size=1)+
+  scale_color_manual(values=c("#7bc143","#2f62ad"))+
+  scale_x_log10()+
+  thlTheme(legend.position="bottom", x.axis.title=TRUE)+
+  facet_wrap(~Cohort)+
+  labs(
+    title="TEQ concentration in children in Finland",
+    subtitle="Cumulative probability",
+    y="",
+    x="Total TEQ (pg/g fat)"
+  )
+
+
+```
+
+### How many individuals exceed the limit value 7 pg/g?
+
+```{r}
+
+ggplot(out, aes(x=P_exceed.Total_TEQ_pred, colour=Subgroup))+stat_ecdf()+
+  labs(
+    title="Individual probability that concentration will exceed 7 pg/g fat",
+    subtitle="based on PCB modelling, not TEQ measurements",
+    y="Cumulative probability in population",
+    x="Individual probability of exceedance")
+  
+cat("PCDD/F TEQ values (expected value) exceeding 7 pg/g\n")
+aggregate(out$PCDDF_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+cat("PCDD/F TEQ values (random draw) exceeding 7 pg/g\n")
+aggregate(out$Sample.PCDDF_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+
+cat("Total TEQ values (expected value) exceeding 7 pg/g\n")
+aggregate(out$Total_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+cat("Total TEQ values (random draw) exceeding 7 pg/g\n")
+aggregate(out$Sample.Total_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+
+exceedance <- apply(exp(samps.j$teq)>7, MARGIN=c("Subgroup","TEQ"), FUN=mean)
+aggregate(exceedance, by=list(rownames(exceedance)), FUN=mean)
+
+cat("Fraction of children whose 95% fractile exceeds 7 pg/g PCDD/F TEQ")
+1 - min(fig1adata$lower1[fig1adata$x>7])
+
+cat("Fraction of children whose 95% fractile exceeds 7 pg/g PCDD/F TEQ")
+1 - min(fig2adata$lower1[fig2adata$x>7])
+
+
+```
+
+Two individual children had it more likely than not to actually exceed the total TEQ concentration of 7 pg/g fat, estimated based on their PCB concentrations.
+
+
+
+Table. Probability of exceeding limit value of 7 pg/g TEQ based on random draws from individual probability distributions (pred) or data (Donor and Woman).
+
+The best estimates of Total TEQs of children practically never exceed the limit of 7 pg/g fat. However, if we look at a random draw from the concentration distribution, about 3 % of children and 40 % of women exceed the limit value. With the 90 % confidence intervals of individual TEQ estimates, one tenth of children have 5 % chance that their concentration actually exceeds the limit value. Note that this does NOT mean that there is 5 % change that one tenth of children exceed the limit value.
+
+### Statistical testing of result
+
+```{r}
+
+scatterplotMatrix(((samps.j$mu[,,1,1])), main = "Predictions for mu of different TEQ values")
+scatterplotMatrix(t((samps.j$tau[,,1])), main = "Predictions for tau of different TEQ values")
+scatterplotMatrix(t(samps.j$b[1,,,1]), main = "Predictions for b for PCDD/F-TEQ of different PCB congeners")
+scatterplotMatrix(exp(samps.j$teq[,,1,1]), main="Predictions for TEQ of different TEQ values")
+
+plot(coda.samples(jags, 'tau', N))
+
+```
+
+
+```{r linearregression, include=FALSE}
+if(FALSE) {
+  # The rest of the document are experimental analyses that did not quite work out. The results have not been checked and should not be trusted.
+
+  # Let's try something really simple. Lets just calculate the congener-specific means and covariance matrix, and then take a random sample based on them.
+
+# Model for total sum
+mod <- lm(Total_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year,
+          data = pop_w)
+mod <- stepAIC(mod, direction = "both", trace = FALSE)
+
+summary(mod)
+
+comp <- data.frame()
+  comp <- rbind(
+    comp,
+    cbind(TEQ = "PCDD/F+PCB", pop_w, Pred = predict(mod, newdata = pop_w))
+  )
+
+# Model for PCDD/F TEQ
+mod <- lm(PCDDF_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year,
+          data = pop_w)
+mod <- stepAIC(mod, direction = "both", trace = FALSE)
+
+summary(mod)
+
+  comp <- rbind(
+    comp,
+    cbind(TEQ = "PCDD/F", pop_w, Pred = predict(mod, newdata = pop_w))
+  )
+
+# Model for PCB TEQ
+mod <- lm(PCB_TEQ ~ PCB74 + PCB99 + PCB118 + PCB138 + PCB153 + PCB156 + PCB170 + PCB180 + PCB187 +
+             SUM9PCB + Kuopio + Year,
+          data = pop_w)
+mod <- stepAIC(mod, direction = "both", trace = FALSE)
+
+summary(mod)
+
+comp <- rbind(
+  comp,
+  cbind(TEQ = "PCB", pop_w, Pred = predict(mod, newdata = pop_w))
+)
+
+
+ggplot(comp[comp$TEQ=="PCDD/F+PCB" & comp$Subgroup=="Woman",], aes(x=exp(Total_TEQ), y=exp(Pred), color=TEQ))+geom_point()+
+  geom_line(data=data.frame(x=c(1,50), y=c(1,50)),aes(x=x,y=y), color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="PCDD/F + PCB TEQ", x="Measured", y="Predicted")
+
+ggplot(comp[comp$TEQ=="PCDD/F" & comp$Subgroup=="Woman",], aes(x=exp(PCDDF_TEQ), y=exp(Pred), color=TEQ))+geom_point()+
+  geom_line(data=data.frame(x=c(1,50), y=c(1,50)),aes(x=x,y=y), color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="PCDD/F TEQ", x="Measured", y="Predicted")
+
+ggplot(comp[comp$TEQ=="PCB" & comp$Subgroup=="Woman",], aes(x=exp(PCB_TEQ), y=exp(Pred), color=TEQ))+geom_point()+
+  geom_line(data=data.frame(x=c(1,50), y=c(1,50)),aes(x=x,y=y), color="red")+
+  scale_x_log10()+scale_y_log10()+
+  labs(title="PCB TEQ", x="Measured", y="Predicted")
+
+ggplot(comp, aes(x=exp(Pred), color=Subgroup))+stat_ecdf()+scale_x_log10()+geom_vline(xintercept =7)+
+  facet_wrap(~TEQ)
+
+cat("Probability that concentration exceeds 7 pg/g fat\n")
+aggregate(comp$Pred, by=comp[c("Kuopio","TEQ","Subgroup")], FUN = function(x) mean(exp(x)>=7))
+}
+
+```
+
+
+```{r covariancematrix, include = FALSE}
+if(FALSE) {
+
+  #I calculated means and the covariance matrix (using simply cov()) for all log-converted congeners. Then I sampled the multivariable normal distribution by using the package condMVNorm and function rcmvnorm. The resulting predictions correlated very poorly with measured concentrations, so I dropped this approach. There must have been an error somewhere but I did not start debugging it.
+
+  momcv <- mom2[c(pcb9, "Total_TEQ","PCB_TEQ","PCDDF_TEQ")]
+
+pairs.panels(momcv, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+
+momcv <- log(data.matrix(momcv)+0.001)
+mommean <- colMeans(momcv, na.rm=TRUE) 
+momcv <- cov(momcv, use="complete.obs")
+
+pairs.panels(exp(mvrnorm(n=535, mu=mommean, Sigma=momcv)),
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+
+library(condMVNorm)
+
+tst <- sapply(1:nrow(pop_w), FUN = function(i) {
+  exp(rcmvnorm(
+    n = 1,
+    mean = mommean,
+    sigma=momcv,
+    dependent.ind = 10:12,
+    given.ind = 1:9,
+    X.given = as.vector(data.matrix((pop_w[i, 5:13])))
+  ))
+}
+)
+dim(tst) <- c(nrow(tst)/3,3,ncol(tst))
+dimnames(tst) <- list(Iter=as.character(1:(dim(tst)[1])), Compound = colnames(pop_w)[14:16], I=as.character(1:(dim(tst)[3])))
+
+comp <- merge(
+  melt(cbind(pop_w[14:16],I=1:nrow(pop_w)),variable.name = "Compound",value.name = "Measured", measure.vars = colnames(pop_w)[14:16]),
+  melt(tst[1,,])
+)
+
+ggplot(comp, aes(x=Measured, y=value, color=Compound))+geom_point()+coord_cartesian(xlim=c(0,20), ylim = c(0,150))
+}
+
+```
+
