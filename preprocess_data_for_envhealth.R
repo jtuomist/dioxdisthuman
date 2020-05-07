@@ -7,6 +7,7 @@
 library(OpasnetUtils)
 library(thlVerse)
 library(thlConnect)
+library(reshape2)
 
 # PCBs of interest (the order of decreasing correlation with SUM-TEQ will be determined automatically later)
 pcb9 <- c("PCB118","PCB138","PCB74","PCB156","PCB153","PCB99","PCB187","PCB170","PCB180")
@@ -17,14 +18,15 @@ teq3 <- c("PCDDF_TEQ", "PCB_TEQ", "Total_TEQ")
 boys <- read.csv("../Dioxdistboys/NuorDiox-Individual-Data_Jouni_2019-10-16.csv", header=TRUE, sep=";", dec=",")
 boys <- boys[boys$Cohort != "", ] # Remove empty rows
 boys$Id <- 1:nrow(boys)
-boys$BirthYear <- as.integer(gsub(" ", "", as.character(boys$BirthYear)))
+colnames(boys)[colnames(boys)=="BirthYear"] <- "Birthyear"
+boys$Birthyear <- as.integer(gsub(" ", "", as.character(boys$Birthyear)))
 boys <- boys[!(grepl("TEQ", colnames(boys)) | colnames(boys) %in%
                  c("Code","CohortClass","SexClass","FirstBorn","FirstBornClass",
                    "AgeClass","Post_Office","VisitDate",""))]
-boys$year <- boys$Age + boys$BirthYear
+boys$year <- boys$Age + boys$Birthyear
 boys$Age <- factor(boys$Age, levels=c(7,8,9,10,17,18,19),
                    labels=c(rep("7-9",3),"10", rep("17-19",3)))
-boys <- melt(boys, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","BirthYear", "year"),
+boys <- melt(boys, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","Birthyear", "year"),
              variable.name="Compound",value.name="Result")
 Var <- factor(substr((boys$Compound), nchar(as.character(boys$Compound)),1000)) # F fat or V volume-based?
 boys <- boys[Var=="F",]
@@ -49,12 +51,12 @@ moms <- moms[!grepl("(BDE|PCN|DDD|DDE|DDT|PCB80|PCB122|PCB159)", colnames(moms))
 
 moms$Cohort <- "WHO mothers' milk"
 moms$Center <- factor(ifelse(grepl("R",moms$Id),"Rovaniemi",ifelse(grepl("K",moms$Id),"Kuopio","Helsinki")))
-moms$BirthYear <- moms$year - moms$Age
+moms$Birthyear <- moms$year - moms$Age
 moms$Age <- factor(moms$Age)
 moms$Sex <- "female"
 moms$Parity <- as.character(ifelse(moms$Parity<4,moms$Parity,4))
 
-moms <- melt(moms, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","BirthYear","year"),
+moms <- melt(moms, id.vars =c("Id","Cohort","Sex","Age","Center","Parity","Birthyear","year"),
              variable.name="Compound",value.name="Result")
 levels(moms$Compound) <- toupper(gsub("(^X|\\.)","", levels(moms$Compound))) # Remove unnecessary variation from congener names
 
@@ -76,7 +78,7 @@ men$year <- 2019
 men$Cohort <- "SPR"
 men$Sex <- "male"
 men$Age <- "18-20"
-men$BirthYear <- 2000
+men$Birthyear <- 2000
 men$Parity <- "unknown"
 
 ## Combine children, women and donors to a single dataframe
@@ -98,6 +100,10 @@ conv <- paste0("PCB", c(18,28,33,47,49,51,52,60,66,74,80,99,101,105,110,114,118,
                         128,138,141,153,156,157,167,170,180,183,187,189,194,206,209)) # ng/g; convert to pg/g
 
 result(pops)[pops$Compound %in% conv] <- result(pops)[pops$Compound %in% conv] * 1000 # ng/g --> pg/g
+
+## Save data to R object file.
+
+save(pops, file="../Dioxdistboys/pops_ovariable")
 
 ## Upload data to THL database
 

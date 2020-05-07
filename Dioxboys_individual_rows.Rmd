@@ -4,10 +4,10 @@ author: "Jouni Tuomisto"
 date: "15 tammikuuta 2020"
 output:
   word_document: default
-  pdf_document:
-    fig_width: 7
   html_document:
     df_print: paged
+  pdf_document:
+    fig_width: 7
 ---
 
 ```{r setup, include=FALSE}
@@ -29,15 +29,20 @@ library(MASS)
 library(thlGraphs)
 library(thlConnect)
 
-con <- thlDbConnect("pubhealth",dbengine = "postgresql")
+use_database <- FALSE
 
-#dbi <- thlDbInfo("pubhealth",dbengine="postgresql",driver="JDBC")
-
-pops <- thlJdbcQuery(con, "SELECT * FROM envhealth.dioxdisthuman;")
-colnames(pops) <- paste0(toupper(substring(colnames(pops),1,1)), substring(colnames(pops),2))
-colnames(pops)[match(c("Popsresult","Popssource"),colnames(pops))] <- c("popsResult","popsSource")
-pops <- Ovariable("pops", output=pops, marginal=(colnames(pops)!="popsResult"), unit="pg/g")
-
+if(use_database) {
+  con <- thlDbConnect("pubhealth",dbengine = "postgresql")
+  
+  #dbi <- thlDbInfo("pubhealth",dbengine="postgresql",driver="JDBC")
+  
+  pops <- thlJdbcQuery(con, "SELECT * FROM envhealth.dioxdisthuman;")
+  colnames(pops) <- paste0(toupper(substring(colnames(pops),1,1)), substring(colnames(pops),2))
+  colnames(pops)[match(c("Popsresult","Popssource"),colnames(pops))] <- c("popsResult","popsSource")
+  pops <- Ovariable("pops", output=pops, marginal=(colnames(pops)!="popsResult"), unit="pg/g")
+} else {
+  load(file="../Dioxdistboys/pops_ovariable")
+}
 
 # PCBs of interest (the order of decreasing correlation with SUM-TEQ will be determined automatically later)
 pcb9 <- c("PCB118","PCB138","PCB74","PCB156","PCB153","PCB99","PCB187","PCB170","PCB180")
@@ -324,23 +329,19 @@ N <- 500
 mod <- textConnection(
   "
   model{
-    for(j in C) { # TEQ columns, after pcb9 columns
+    for(j in C) { # TEQ columns (after pcb9 columns)
+      tau[j] ~ dgamma(1.0, 1.0)
       for(i in S) { # S = human sample
-    #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
+        #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
+        teq[i,j] ~ dnorm(mu[i,j], tau[j])
 
-      mu[i,j] <-  b[j,1]*conc[i,1] + b[j,2]*conc[i,2] + b[j,3]*conc[i,3] +
-                  b[j,4]*conc[i,4] + b[j,5]*conc[i,5] + b[j,6]*conc[i,6] +
-                  b[j,7]*conc[i,7] + b[j,8]*conc[i,8] + b[j,9]*conc[i,9] 
+        mu[i,j] <-  b[j,1]*conc[i,1] + b[j,2]*conc[i,2] + b[j,3]*conc[i,3] +
+                    b[j,4]*conc[i,4] + b[j,5]*conc[i,5] + b[j,6]*conc[i,6] +
+                    b[j,7]*conc[i,7] + b[j,8]*conc[i,8] + b[j,9]*conc[i,9] 
       }
-    for(k in K) {
-      b[j,k] ~ dnorm(0, 0.0001) # Congener-specific coefficient to calculate different TEQs
-    }
-    }
-    tau[1] ~ dgamma(1.0E-3, 1.0E-3)
-    tau[2] ~ dgamma(1.0E-3, 1.0E-3)
-    for(i in S) {
-      teq[i,1] ~ dnorm(mu[i,1], tau[1])
-      teq[i,2] ~ dnorm(mu[i,2], tau[2])
+      for(k in K) {
+        b[j,k] ~ dnorm(0, 0.0001) # Congener-specific coefficient for TEQs
+      }
     }
   }
 ")
