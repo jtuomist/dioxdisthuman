@@ -1,7 +1,7 @@
 ---
 title: "TEQ concentration predictions in 9-year-old boys in Finland"
 author: "Jouni Tuomisto"
-date: "15 tammikuuta 2020"
+date: "2020-05-15"
 output:
   word_document: default
   html_document:
@@ -12,6 +12,137 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE) #knitr::opts_knit$set(root.dir="C:/_Eivarmisteta/Rantakokko_Chemosphere_dioxdistboys_2019")
+
+# Import the official THL font
+
+library(showtext)
+font_add_google("Source Sans Pro", "source")
+
+# https://cran.rstudio.com/web/packages/showtext/vignettes/introduction.html
+
+showtext_auto()
+
+# This uses font Source Sans Pro, when using theme_thl(base_family="source")
+
+### Define colours
+
+#7bc143 Vaaleanvirheä
+#29a0c1 syaaninsininen
+#2f62ad tummansininen 
+#519b2f tummanvihreä
+ruby <- "#be3f72" # rubiininpunainen
+#cc77ac roosa
+#faa61a oranssi
+#606060 tumma harmaa
+#c3c2c6 keskiharmaa
+#dcdfe2 vaaleanharmaa
+
+dark <- "#078390" #rgb(  7, 131, 144,,,255) # tumma turkoosi
+light <- "#C1E0E3" #rgb(193, 224, 227,,,255) # vaalea turkoosi
+"#C1E0E3" #rgb(230, 242, 244,,,255) # vaalea kala
+"#7BA343" #rgb(123, 163,  67,,,255) # THL:n vihreä
+
+### Make y axis title along the axis
+
+if(TRUE) {
+theme_thl <- function (base_size = 16, base_family = "ArialMT", base_line_size = thlPtsConvert(1.5), 
+  base_rect_size = thlPtsConvert(1.5), horizontal = FALSE, 
+  show_axis_line = TRUE, ...) 
+{
+  if (.Platform$OS.type == "windows") {
+    windowsFonts(ArialMT = windowsFont("ArialMT"))
+  }
+  half_line <- base_size/2
+  margin_q <- base_size/4
+  axis.line <- element_line(colour = "#606060", size = 1.5 * 
+    base_line_size, lineend = "butt")
+  if (isFALSE(show_axis_line)) {
+    axis.line <- element_blank()
+  }
+  text_plain <- element_text(size = 0.625 * base_size, face = "plain")
+  text_bold <- element_text(size = 0.75 * base_size, face = "bold")
+  text_t <- element_text(margin = margin(b = 0.8 * margin_q), 
+    vjust = 0)
+  text_b <- element_text(margin = margin(t = 0.8 * margin_q), 
+    vjust = 1)
+  text_l <- element_text(margin = margin(r = 0.8 * margin_q), 
+    hjust = 1)
+  text_r <- element_text(margin = margin(l = 0.8 * margin_q), 
+    hjust = 0)
+  axis.title.x <- element_text(margin = margin(t = margin_q), 
+    vjust = 1)
+  axis.title.x.right <- element_text(margin = margin(t = margin_q), 
+    vjust = 1, hjust = 1)
+  axis.title.y <- element_text(angle = 90, margin = margin(r = margin_q), 
+    hjust = 0.5)
+  axis.title.y.top <- element_text(angle = 0, hjust = 1, vjust = 1.05, 
+    margin = margin(r = -margin_q))
+  if (isTRUE(horizontal)) {
+    axis.line.x <- element_blank()
+    axis.line.y <- axis.line
+    axis.text.x <- merge_element(text_plain, text_b)
+    axis.text.y <- merge_element(text_bold, text_l)
+    panel.grid.major.x <- element_line()
+    panel.grid.major.y <- element_blank()
+  }
+  else {
+    axis.line.x <- axis.line
+    axis.line.y <- element_blank()
+    axis.text.x <- merge_element(text_bold, text_b)
+    axis.text.y <- merge_element(text_plain, text_l)
+    panel.grid.major.x <- element_blank()
+    panel.grid.major.y <- element_line()
+  }
+  theme(line = element_line(colour = "#dcdfe2", size = base_line_size, 
+    linetype = 1, lineend = "butt"), rect = element_rect(colour = "white", 
+    fill = "white", size = base_rect_size, linetype = 1), 
+    text = element_text(family = base_family, colour = "#606060", 
+      face = "plain", size = 0.625 * base_size, lineheight = 0.9, 
+      hjust = 0.5, vjust = 0.5, angle = 0, margin = margin(), 
+      debug = FALSE), axis.line = element_line(), axis.line.x = axis.line.x, 
+    axis.line.y = axis.line.y, axis.text = element_text(size = 0.625 * 
+      base_size, face = "plain"), axis.text.x = axis.text.x, 
+    axis.text.x.top = merge_element(text_plain, text_t), 
+    axis.text.y = axis.text.y, axis.text.y.right = merge_element(text_plain, 
+      text_r), axis.ticks = element_blank(), axis.ticks.length = unit(half_line/2, 
+      "pt"), axis.title = element_text(size = 0.75 * base_size, 
+      angle = 0), axis.title.x = axis.title.x, axis.title.x.top = element_text(vjust = 0, 
+      margin = margin(b = margin_q)), axis.title.y = axis.title.y, 
+    axis.title.y.right = element_text(vjust = 1.05, hjust = 0, 
+      margin = margin(l = margin_q)), legend.background = element_rect(), 
+    legend.margin = margin(half_line, half_line, half_line, 
+      half_line), legend.spacing = unit(2 * half_line, 
+      "pt"), legend.spacing.x = NULL, legend.spacing.y = NULL, 
+    legend.key = element_blank(), legend.key.size = unit(1.2, 
+      "lines"), legend.key.height = NULL, legend.key.width = NULL, 
+    legend.text = element_text(size = 0.652 * base_size), 
+    legend.text.align = NULL, legend.title = element_text(size = 0.75 * 
+      base_size, hjust = 0), legend.title.align = NULL, 
+    legend.position = "right", legend.direction = NULL, 
+    legend.justification = "center", legend.box = NULL, 
+    legend.box.margin = margin(0, 0, 0, 0, "cm"), legend.box.background = element_blank(), 
+    legend.box.spacing = unit(2 * half_line, "pt"), panel.background = element_blank(), 
+    panel.border = element_blank(), panel.spacing = unit(half_line, 
+      "pt"), panel.spacing.x = NULL, panel.spacing.y = NULL, 
+    panel.grid = element_line(colour = "#dcdfe2", size = rel(2/3)), 
+    panel.grid.minor = element_blank(), panel.grid.major.x = panel.grid.major.x, 
+    panel.grid.major.y = panel.grid.major.y, panel.ontop = FALSE, 
+    plot.background = element_rect(colour = "white", fill = "white"), 
+    plot.title = element_text(family = base_family, size = base_size, 
+      face = "bold", hjust = 0, color = "#606060", margin(b = 10, 
+        t = 10)), plot.subtitle = element_text(size = 0.75 * 
+      base_size, hjust = 0), plot.caption = element_text(size = 0.625 * 
+      base_size, hjust = 1, vjust = 0), plot.tag = element_text(size = base_size, 
+      hjust = 0.5, vjust = 0.5), plot.tag.position = "topleft", 
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 15, 
+      unit = "pt"), strip.background = element_rect(colour = "white", 
+      fill = "white"), strip.placement = "outside", strip.text = element_text(size = 0.625 * 
+      base_size), strip.text.x = NULL, strip.text.y = element_text(angle = -90), 
+    strip.switch.pad.grid = unit(half_line/2, "pt"), strip.switch.pad.wrap = unit(half_line/2, 
+      "pt"), complete = TRUE, validate = FALSE) + theme(...)
+}
+}
+
 ```
 
 ## Model initiation
@@ -27,11 +158,11 @@ library(reshape2)
 library(ggplot2)
 library(MASS)
 library(thlGraphs)
-library(thlConnect)
 
 use_database <- FALSE
 
 if(use_database) {
+  library(thlConnect)
   con <- thlDbConnect("pubhealth",dbengine = "postgresql")
   
   #dbi <- thlDbInfo("pubhealth",dbengine="postgresql",driver="JDBC")
@@ -217,18 +348,17 @@ for(j in teq3) {
 # [1] "PCDDF_TEQ" "PCB_TEQ"   "Total_TEQ"
 levels(stati$Dependent) <- c("PCDD/F TEQ", "PCB TEQ", "Total TEQ")
 
-ggplot(stati, aes(x=Independents, y=AdjR, color=Model, group=Model))+geom_line(size=1.5)+theme(axis.text.x=element_text(angle=90, vjust=0.5))+
+ggplot(stati, aes(x=Independents, y=AdjR, color=Model, group=Model))+geom_line(size=1.5)+
   facet_grid(.~Dependent)+
-  scale_color_manual(values=c("#7bc143","#2f62ad","#be3f72"))+
+  scale_color_manual(values=c(light,dark,ruby))+
   labs(
 #    title="Explanatory power of PCB combinations on TEQ",
-    subtitle="Adjusted R-squared",
-    y="",
+    y="Adjusted R-squared",
     x="PCB congener"
   )+
-  thlTheme(legend.position="bottom", x.axis.title = TRUE, base.size=22)
+  theme_thl(legend.position="bottom", base_size=18, base_family = "source", axis.text.x=element_text(angle=90, vjust=0.5))
 
-ggsave("Explanatory_power_of_PCB_on_TEQ.png",width=16/2.54, height=18/2.54)
+ggsave("Explanatory_power_of_PCB_on_TEQ.pdf",width=16/2.54, height=18/2.54)
 
 # 4. Model using AIC to find the best set of variables from congeners and congener sums
 
@@ -438,9 +568,16 @@ out <- cbind(out, samp)
 
 out[!grepl("_pred", out$Subgroup) , grepl("(_pred|%)", colnames(out))] <- 
   out[grepl("_pred", out$Subgroup) , grepl("(_pred|%)", colnames(out))]
+
 colnames(out)[grepl("%", colnames(out))] <- c("PCDDF_P05", "PCDDF_P50", "PCDDF_P95", "PCB_P05","PCB_P50", "PCB_P95",
                                               "SUM_P05", "SUM_P50","SUM_P95")
 out <- out[!grepl("_pred", out$Subgroup),]
+
+colnames(out)[match(c(
+  "PCDDF_TEQ_pred","PCB_TEQ_pred","Total_TEQ_pred",
+  "Sample.PCDDF_TEQ_pred","Sample.PCB_TEQ_pred", "Sample.Total_TEQ_pred",
+  "P_exceed.PCDDF_TEQ_pred", "P_exceed.PCB_TEQ_pred", "P_exceed.Total_TEQ_pred"),colnames(out))] <-
+  c("PCDDF_pred","PCB_pred","SUM_pred","PCDDF_sample","PCB_sample","SUM_sample","PCDDF_p_exceed","PCB_p_exceed","SUM_p_exceed")
 
 out <- merge(out, unique(pop@output[c("Id","Cohort","Sex","Age","Center","Parity","Birthyear","Year")]))
 
@@ -452,38 +589,38 @@ out <- merge(out, unique(pop@output[c("Id","Cohort","Sex","Age","Center","Parity
 
 lin <- function(df) {df <- na.omit(df); df <- c(min(df), max(df)); data.frame(x=df, y=df)}
 
-ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_TEQ_pred")]), aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_pred")]), aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted PCDDF TEQ")
 
-ggplot(out, aes(x=PCDDF_TEQ, y=Sample.PCDDF_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("PCDDF_TEQ","Sample.PCDDF_TEQ_pred")]), aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_sample, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_sample")]), aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted PCDDF TEQ")
 
-ggplot(out, aes(x=PCB_TEQ, y=PCB_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("PCB_TEQ","PCB_TEQ_pred")]),aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=PCB_TEQ, y=PCB_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCB_TEQ","PCB_pred")]),aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted PCBTEQ")
 
-ggplot(out, aes(x=PCB_TEQ, y=Sample.PCB_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("PCB_TEQ","Sample.PCB_TEQ_pred")]),aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=PCB_TEQ, y=PCB_sample, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("PCB_TEQ","PCB_sample")]),aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted PCBTEQ")
 
-ggplot(out, aes(x=Total_TEQ, y=Total_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("Total_TEQ","Total_TEQ_pred")]),aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=Total_TEQ, y=SUM_pred, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("Total_TEQ","SUM_pred")]),aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted Total TEQ")
 
-ggplot(out, aes(x=Total_TEQ, y=Sample.Total_TEQ_pred, color=Subgroup))+geom_point()+
-  geom_line(data=lin(out[c("Total_TEQ","Sample.Total_TEQ_pred")]),aes(x=x, y=y),color="red")+
+ggplot(out, aes(x=Total_TEQ, y=SUM_sample, color=Subgroup))+geom_point()+
+  geom_line(data=lin(out[c("Total_TEQ","SUM_sample")]),aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Measured and predicted Total TEQ")
 
-ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, colour=Year))+geom_point()+
-  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
+ggplot(out, aes(x=PCDDF_TEQ, y=PCDDF_pred, colour=Year))+geom_point()+
+  geom_line(data=lin(out[c("PCDDF_TEQ","PCDDF_pred")]),aes(x=x, y=y),color=ruby)+
   scale_x_log10()+scale_y_log10()+
   labs(
     title="Prediction accuracy for PCDD/F TEQ",
@@ -498,57 +635,56 @@ tmp <- out[out$Subgroup %in% c("Woman","Donor"),]
 tmp$Subgroup <- factor(tmp$Subgroup, levels=c("Woman","Donor"), labels= c("Breast milk samples","Male blood donor samples"))
 
 fig1b <- 
-ggplot(tmp, aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred, colour=Subgroup))+geom_point()+
-  geom_line(data=lin(tmp[c("PCDDF_TEQ","PCDDF_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
-  geom_point(data=out[out$Subgroup=="Donor",], aes(x=PCDDF_TEQ, y=PCDDF_TEQ_pred),
-             colour="#be3f72", size=5, shape=1, stroke=2)+
-  scale_color_manual(values=c("#7bc143", "#be3f72"))+
+ggplot(tmp, aes(x=PCDDF_TEQ, y=PCDDF_pred, colour=Subgroup))+geom_point()+
+  geom_line(data=lin(tmp[c("PCDDF_TEQ","PCDDF_pred")]),aes(x=x, y=y),color=ruby)+
+  geom_point(data=out[out$Subgroup=="Donor",], aes(x=PCDDF_TEQ, y=PCDDF_pred),
+             colour=ruby, size=5, shape=1, stroke=2)+
+  scale_color_manual(values=c(light, ruby))+
   scale_x_log10()+scale_y_log10()+
-  thlTheme(legend.position="bottom", x.axis.title = TRUE)+
+  theme_thl(base_family="source", legend.position="bottom")+
   labs(
 #    title="Prediction accuracy for PCDD/F TEQ",
-    subtitle="Predicted PCDD/F TEQ concentration, pg/g fat",
-    y="",
+    y="Predicted PCDD/F TEQ concentration, pg/g fat",
     x="Measured PCDD/F TEQ concentration, pg/g fat")
 
-fig1bdata <- fig1b$data[c("Subgroup","PCDDF_TEQ","PCDDF_TEQ_pred")]
+fig1bdata <- fig1b$data[c("Subgroup","PCDDF_TEQ","PCDDF_pred")]
 write.csv(fig1bdata, "fig1bdata.csv")
 fig1b
 
-oprint(fig1bdata[fig1bdata$Subgroup=="Male blood donors",])
+oprint(fig1bdata[fig1bdata$Subgroup=="Male blood donor samples",])
 
-ggsave("Predicted PCDDF TEQ.png", width=16/2.54, height=18/2.54)
+ggsave("Predicted PCDDF TEQ.pdf", width=16/2.54, height=18/2.54)
 
 fig2b <- 
-ggplot(tmp, aes(x=Total_TEQ, y=Total_TEQ_pred, colour=Subgroup))+geom_point()+
-  geom_line(data=lin(tmp[c("Total_TEQ","Total_TEQ_pred")]),aes(x=x, y=y),color="#be3f72")+
-  geom_point(data=out[out$Subgroup=="Donor",], aes(x=Total_TEQ, y=Total_TEQ_pred),
-             colour="#be3f72", size=5, shape=1, stroke=2)+
-  scale_color_manual(values=c("#7bc143", "#be3f72"))+
+ggplot(tmp, aes(x=Total_TEQ, y=SUM_pred, colour=Subgroup))+geom_point()+
+  geom_line(data=lin(tmp[c("Total_TEQ","SUM_pred")]),aes(x=x, y=y),color=ruby)+
+  geom_point(data=out[out$Subgroup=="Donor",], aes(x=Total_TEQ, y=SUM_pred),
+             colour=ruby, size=5, shape=1, stroke=2)+
+  scale_color_manual(values=c(light, ruby))+
   scale_x_log10()+scale_y_log10()+
-  thlTheme(legend.position="bottom", x.axis.title = TRUE)+
+  theme_thl(base_family="source", legend.position="bottom")+
   labs(
 #    title="Prediction accuracy for Total TEQ",
     subtitle="Predicted total TEQ concentration, pg/g fat",
     y="",
     x="Measured total TEQ concentration, pg/g fat")
 
-fig2bdata <- fig2b$data[c("Subgroup","Total_TEQ","Total_TEQ_pred")]
+fig2bdata <- fig2b$data[c("Subgroup","Total_TEQ","SUM_pred")]
 write.csv(fig2bdata, "fig2bdata.csv")
 fig2b
 
-oprint(fig2bdata[fig2bdata$Subgroup=="Male blood donors",])
+oprint(fig2bdata[fig2bdata$Subgroup=="Male blood donor samples",])
 
-ggsave("Predicted Total TEQ.png", width=16/2.54, height=18/2.54)
+ggsave("Predicted Total TEQ.pdf", width=16/2.54, height=18/2.54)
 
 cat("R^2^ for PCDD/F TEQ measured and predicted\n")
-cor(log(out[c("PCDDF_TEQ", "PCDDF_TEQ_pred")]), use="pairwise.complete.obs")^2
+cor(log(out[c("PCDDF_TEQ", "PCDDF_pred")]), use="pairwise.complete.obs")^2
 
 cat("R^2^ for PCB TEQ measured and predicted\n")
-cor(log(out[c("PCB_TEQ", "PCB_TEQ_pred")]), use="pairwise.complete.obs")^2
+cor(log(out[c("PCB_TEQ", "PCB_pred")]), use="pairwise.complete.obs")^2
 
 cat("R^2^ for Total TEQ measured and predicted\n")
-cor(log(out[c("Total_TEQ", "Total_TEQ_pred")]), use="pairwise.complete.obs")^2
+cor(log(out[c("Total_TEQ", "SUM_pred")]), use="pairwise.complete.obs")^2
 
 # Why are the R^2 values so poor? With linear regression, they are ca 0.85, with Bayesian model ca 0.65.
 
@@ -564,10 +700,11 @@ Model is fairly good at predicting measured results, R^2^ values are 65 % or mor
 
 ```{r}
 
+if(FALSE) {
 library(thlGraphs)
 
 ggplot(out)+
-  stat_ecdf(aes(x=PCDDF_TEQ_pred, colour=Subgroup, linetype="Expectation"))+
+  stat_ecdf(aes(x=PCDDF_pred, colour=Subgroup, linetype="Expectation"))+
   stat_ecdf(aes(x=PCDDF_P05, colour=Subgroup, linetype="90 % CI"))+
   stat_ecdf(aes(x=PCDDF_P50, colour=Subgroup, linetype="Median"))+
   stat_ecdf(aes(x=PCDDF_P95, colour=Subgroup, linetype="90 % CI"))+
@@ -576,8 +713,7 @@ ggplot(out)+
   labs(title="Predicted and confidence interval")
 
 # https://stackoverflow.com/questions/20277658/how-to-combine-stat-ecdf-with-geom-ribbon
-
-tmp <- out[out$Subgroup=="Child",]
+}
 
 
 ```
@@ -585,6 +721,9 @@ tmp <- out[out$Subgroup=="Child",]
 ### Cumulative distributions of modelled concentrations
 
 ```{r}
+
+tmp <- out[out$Subgroup=="Child",]
+
 #### Figures with cumulative distributions, including individual uncertainties
 
 ### Children sorted based on random value
@@ -592,68 +731,51 @@ tmp <- out[out$Subgroup=="Child",]
 
 ### Children sorted based on expected value
 
-tmp <- tmp[order(tmp$PCDDF_TEQ_pred),]
-tmp$x_pcddf <- seq(0,1,1/(nrow(tmp)-1))
+tmp <- tmp[order(tmp$PCDDF_pred),]
+tmp$y <- seq(0,1,1/(nrow(tmp)-1))
 
 tmp$x <- seq(
-  min(tmp[c("PCDDF_P05","Sample.PCDDF_TEQ_pred","PCDDF_P95")]),
-  max(tmp[c("PCDDF_P05","Sample.PCDDF_TEQ_pred","PCDDF_P95")]),
+  min(tmp[c("PCDDF_P05","PCDDF_sample","PCDDF_P95")]),
+  max(tmp[c("PCDDF_P05","PCDDF_sample","PCDDF_P95")]),
   length.out = nrow(tmp))
-
-lo <- ecdf(tmp$PCDDF_P95)
-up <- ecdf(tmp$PCDDF_P05)
-tmp$lower1 <- lo(tmp$x)
-tmp$upper1 <- up(tmp$x)
 
 fig1a <- 
 ggplot(tmp) + 
-#  geom_ribbon(aes(x=x, ymin = upper1,ymax = lower1),alpha = 0.8, fill="#dcdfe2") +
-  geom_path(aes(x=PCDDF_P05, y=x_pcddf), colour="#7bc143")+
-  geom_path(aes(x=PCDDF_P95, y=x_pcddf), colour="#7bc143")+
+  geom_path(aes(x=PCDDF_P05, y=y), colour=light)+
+  geom_path(aes(x=PCDDF_P95, y=y), colour=light)+
   geom_line(data=data.frame(
     Id = rep(tmp$Id,2),
     Conc = c(tmp$PCDDF_P05, tmp$PCDDF_P95),
-    y = rep((1:nrow(tmp))/nrow(tmp),2))[seq(1,nrow(tmp)*2,4),], # Thin the CI so that you can see the lines
+    y = rep((1:nrow(tmp))/nrow(tmp),2))[c(seq(1,nrow(tmp),4),seq(1,nrow(tmp),4)+nrow(tmp)),], # Thin the CI so that you can see the lines
     aes(x=Conc, y=y, group=Id),
-    size=0.05, colour="#7bc143")+
-  geom_line(aes(x = PCDDF_TEQ_pred, y=x_pcddf, colour="Expected value and 5-95% CI"), size=1.5) + 
-  stat_ecdf(aes(x = Sample.PCDDF_TEQ_pred, colour="Random draw"), size=1.5, geom="point") + 
-#  geom_point(aes(x = Sample.PCDDF_TEQ_pred, y=x_pcddf, colour="Random draw"), size=1.5) + 
+    size=0.05, colour=light)+
+  geom_line(aes(x = PCDDF_pred, y=y, colour="Expected value and 5-95% CI"), size=2) + 
+  stat_ecdf(aes(x = PCDDF_sample, colour="Random draw"), size=1.5, geom="point") + 
   geom_vline(aes(xintercept=7, colour="NOAEL 7 pg/g fat"), size=1)+
   coord_cartesian(xlim=c(0.1,10))+
   scale_color_manual(values=c(
-    `Expected value and 5-95% CI`="#7bc143",
-    `Random draw`="#2f62ad",
-    `NOAEL 7 pg/g fat`="#be3f72"),
-    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"))+
+    `Expected value and 5-95% CI`=light,
+    `Random draw`=dark,
+    `NOAEL 7 pg/g fat`=ruby),
+    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"),
+    guide = guide_legend(title=""))+
   scale_x_log10()+
-  thlTheme(legend.position="bottom", x.axis.title=TRUE, base.size=22)+
+  theme_thl(base_size=18, legend.position="bottom", base_family = "source")+
   labs(
 #    title="TEQ concentration in children in Finland",
-    subtitle="Cumulative probability",
-    y="",
+    y="Cumulative probability",
     x="Predicted PCDD/F TEQ concentration, pg/g fat"
   )
 
 fig1a
-ggsave("PCDDF TEQ concentration distribution.png", width=16/2.54, height=18/2.54)
+ggsave("PCDDF TEQ concentration distribution.pdf", width=16/2.54, height=18/2.54)
 
 ```
 
 ```{r}
 
-#7bc143 Vaaleanvirheä
-#29a0c1 syaaninsininen
-#2f62ad tummansininen 
-#519b2f tummanvihreä
-#be3f72 rubiininpunainen
-#cc77ac roosa
-#faa61a oranssi
-#606060 tumma harmaa
-#c3c2c6 keskiharmaa
-#dcdfe2 vaaleanharmaa
 
-fig1adata <- fig1a$data[c("x","upper1","lower1","PCDDF_TEQ_pred","Sample.PCDDF_TEQ_pred")]
+fig1adata <- fig1a$data[c("PCDDF_P05","PCDDF_P95","PCDDF_pred","PCDDF_sample","y")]
 write.csv(fig1adata, "fig1adata.csv")
 
 cat("Median values of data columns\n")
@@ -662,8 +784,8 @@ lapply(fig1adata, median)
 #### Figure 2 with Total TEQ
 
 tmp$x <- seq(
-  min(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
-  max(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  min(tmp[c("SUM_P05","SUM_sample","SUM_P95")]),
+  max(tmp[c("SUM_P05","SUM_sample","SUM_P95")]),
   length.out = nrow(tmp))
 
 lo <- ecdf(tmp$SUM_P95)
@@ -671,62 +793,74 @@ up <- ecdf(tmp$SUM_P05)
 tmp$lower1 <- lo(tmp$x)
 tmp$upper1 <- up(tmp$x)
 
-tmp <- tmp[order(tmp$Total_TEQ_pred),]
-tmp$y_total <- seq(0,1,1/(nrow(tmp)-1))
+tmp <- tmp[order(tmp$SUM_pred),]
+tmp$y <- seq(0,1,1/(nrow(tmp)-1))
 
 tmp$x <- seq(
-  min(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
-  max(tmp[c("SUM_P05","Sample.Total_TEQ_pred","SUM_P95")]),
+  min(tmp[c("SUM_P05","SUM_sample","SUM_P95")]),
+  max(tmp[c("SUM_P05","SUM_sample","SUM_P95")]),
   length.out = nrow(tmp))
-
-lo <- ecdf(tmp$SUM_P95)
-up <- ecdf(tmp$SUM_P05)
-tmp$lower1 <- lo(tmp$x)
-tmp$upper1 <- up(tmp$x)
 
 fig2a <- 
 ggplot(tmp) + 
-  geom_path(aes(x=SUM_P05, y=y_total), colour="#7bc143")+
-  geom_path(aes(x=SUM_P95, y=y_total), colour="#7bc143")+
+  geom_path(aes(x=SUM_P05, y=y), colour=light)+
+  geom_path(aes(x=SUM_P95, y=y), colour=light)+
   geom_line(data=data.frame(
     Id = rep(tmp$Id,2),
     Conc = c(tmp$SUM_P05, tmp$SUM_P95),
-    y = rep((1:nrow(tmp))/nrow(tmp),2))[seq(1,nrow(tmp)*2,4),], # Thin the CI so that you can see the lines
+    y = rep((1:nrow(tmp))/nrow(tmp),2))[c(seq(1,nrow(tmp),4),seq(1,nrow(tmp),4)+nrow(tmp)),], # Thin the CI so that you can see the lines
     aes(x=Conc, y=y, group=Id),
-    size=0.05, colour="#7bc143")+
-  geom_line(aes(x = Total_TEQ_pred, y=y_total, colour="Expected value and 5-95% CI"), size=1.5) + 
-  stat_ecdf(aes(x = Sample.Total_TEQ_pred, colour="Random draw"), size=1.5, geom="point") + 
+    size=0.05, colour=light)+
+  geom_line(aes(x = SUM_pred, y=y, colour="Expected value and 5-95% CI"), size=2) + 
+  stat_ecdf(aes(x = SUM_sample, colour="Random draw"), size=1.5, geom="point") + 
   geom_vline(aes(xintercept=7, colour="NOAEL 7 pg/g fat"), size=1)+
   coord_cartesian(xlim=c(0.1,10))+
   scale_color_manual(values=c(
-    `Expected value and 5-95% CI`="#7bc143",
-    `Random draw`="#2f62ad",
-    `NOAEL 7 pg/g fat`="#be3f72"),
-    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"))+
+    `Expected value and 5-95% CI`=light,
+    `Random draw`=dark,
+    `NOAEL 7 pg/g fat`=ruby),
+#    breaks=c("Expected value and 5-95% CI","Random draw","NOAEL 7 pg/g fat"),
+    guide=guide_legend(title=""))+
   scale_x_log10()+
-  thlTheme(legend.position="bottom", x.axis.title=TRUE, base.size=20)+
+  theme_thl(legend.position="bottom", base_size=18, base_family = "source")+
   labs(
-    subtitle="Cumulative probability",
-    y="",
+    y="Cumulative probability",
     x="Predicted total TEQ concentration, pg/g fat"
   )
 
-fig2adata <- fig2a$data[c("x","upper1","lower1","Total_TEQ_pred","Sample.Total_TEQ_pred")]
+fig2adata <- fig2a$data[c("SUM_P05","SUM_P95","SUM_pred","SUM_sample","y")]
 write.csv(fig2adata, "fig2adata.csv")
 fig2a
 cat("Median values of data columns\n")
 lapply(fig2adata, median)
 
-ggsave("Total TEQ concentration distribution.png", width=16/2.54, height=18/2.54)
+ggsave("Total TEQ concentration distribution.pdf", width=16/2.54, height=18/2.54)
+
+fig2a + labs(
+  y="Kertyvä todennäköisyys",
+  x="Ennustettu TEQ-kokonaispitoisuus, pg/g rasvaa"
+)+
+scale_color_manual(values=c(
+    `Expected value and 5-95% CI`=light,
+    `Random draw`=dark,
+    `NOAEL 7 pg/g fat`=ruby),
+  guide=guide_legend(title="",nrow=2),
+  labels=c(
+  "Odotusarvo (90 % LV)",
+  "Haitaton annos (7 pg/g)",
+  "Satunnaisotanta"
+))
+
+ggsave("TEQ-kokonaispitoisuusjakauma.pdf", width=16/2.54, height=18/2.54)
 
 ggplot(tmp) + 
   geom_ribbon(aes(x=x, ymin = upper1,ymax = lower1),alpha = 0.8, fill="#dcdfe2") +
-  stat_ecdf(aes(x = Total_TEQ_pred, colour="Expectation"), size=1.5) + 
-  stat_ecdf(aes(x = Sample.Total_TEQ_pred, colour="Random draw"), size=1.5) + 
-  geom_vline(xintercept=7, colour="#be3f72", size=1)+
-  scale_color_manual(values=c("#7bc143","#2f62ad"))+
+  stat_ecdf(aes(x = SUM_pred, colour="Expectation"), size=1.5) + 
+  stat_ecdf(aes(x = SUM_sample, colour="Random draw"), size=1.5) + 
+  geom_vline(xintercept=7, colour=ruby, size=1)+
+  scale_color_manual(values=c(light,dark))+
   scale_x_log10()+
-  thlTheme(legend.position="bottom", x.axis.title=TRUE)+
+  theme_thl(base_family="source", legend.position="bottom")+
   facet_wrap(~Cohort)+
   labs(
     title="TEQ concentration in children in Finland",
@@ -742,7 +876,7 @@ ggplot(tmp) +
 
 ```{r}
 
-ggplot(out, aes(x=P_exceed.Total_TEQ_pred, colour=Subgroup))+stat_ecdf()+
+ggplot(out, aes(x=SUM_p_exceed, colour=Subgroup))+stat_ecdf()+
   labs(
     title="Individual probability that concentration will exceed 7 pg/g fat",
     subtitle="based on PCB modelling, not TEQ measurements",
@@ -750,23 +884,23 @@ ggplot(out, aes(x=P_exceed.Total_TEQ_pred, colour=Subgroup))+stat_ecdf()+
     x="Individual probability of exceedance")
   
 cat("PCDD/F TEQ values (expected value) exceeding 7 pg/g\n")
-aggregate(out$PCDDF_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+aggregate(out$PCDDF_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
 cat("PCDD/F TEQ values (random draw) exceeding 7 pg/g\n")
-aggregate(out$Sample.PCDDF_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+aggregate(out$PCDDF_sample, by = out["Subgroup"], FUN= function(x) mean(x>=7))
 
 cat("Total TEQ values (expected value) exceeding 7 pg/g\n")
-aggregate(out$Total_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+aggregate(out$SUM_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
 cat("Total TEQ values (random draw) exceeding 7 pg/g\n")
-aggregate(out$Sample.Total_TEQ_pred, by = out["Subgroup"], FUN= function(x) mean(x>=7))
+aggregate(out$SUM_sample, by = out["Subgroup"], FUN= function(x) mean(x>=7))
 
 exceedance <- apply(exp(samps.j$teq)>7, MARGIN=c("Subgroup","TEQ"), FUN=mean)
 aggregate(exceedance, by=list(rownames(exceedance)), FUN=mean)
 
 cat("Fraction of children whose 95% fractile exceeds 7 pg/g PCDD/F TEQ")
-1 - min(fig1adata$lower1[fig1adata$x>7])
+mean(fig1adata$PCDDF_P95>7)
 
-cat("Fraction of children whose 95% fractile exceeds 7 pg/g PCDD/F TEQ")
-1 - min(fig2adata$lower1[fig2adata$x>7])
+cat("Fraction of children whose 95% fractile exceeds 7 pg/g SUM TEQ")
+mean(fig2adata$SUM_P95>7)
 
 
 ```
