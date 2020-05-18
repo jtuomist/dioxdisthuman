@@ -44,7 +44,7 @@ light <- "#C1E0E3" #rgb(193, 224, 227,,,255) # vaalea turkoosi
 
 ### Make y axis title along the axis
 
-if(TRUE) {
+if(FALSE) {
 theme_thl <- function (base_size = 16, base_family = "ArialMT", base_line_size = thlPtsConvert(1.5), 
   base_rect_size = thlPtsConvert(1.5), horizontal = FALSE, 
   show_axis_line = TRUE, ...) 
@@ -847,7 +847,7 @@ scale_color_manual(values=c(
   guide=guide_legend(title="",nrow=2),
   labels=c(
   "Odotusarvo (90 % LV)",
-  "Haitaton annos (7 pg/g)",
+  "Haitaton pitoisuus (7 pg/g)",
   "Satunnaisotanta"
 ))
 
