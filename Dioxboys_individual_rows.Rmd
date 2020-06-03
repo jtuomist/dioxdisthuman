@@ -10,12 +10,17 @@ output:
     fig_width: 7
 params:
   adjusted_theme_thl: TRUE
+  run_preprocess: FALSE
   run_bayes: FALSE
   N: 500
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE) #knitr::opts_knit$set(root.dir="C:/_Eivarmisteta/Rantakokko_Chemosphere_dioxdistboys_2019")
+
+library(ggplot2)
+library(OpasnetUtils)
+library(thlGraphs)
 
 # Import the official THL font
 
@@ -157,91 +162,93 @@ NOTE! This model has a problem that it first logtransforms the data and then mak
 
 
 ```{r initiate}
-library(OpasnetUtils)
-library(reshape2)
-library(ggplot2)
-library(MASS)
-library(thlGraphs)
 
-use_database <- FALSE
+if(params$run_preprocess) {
+  library(OpasnetUtils)
+  library(reshape2)
+  library(MASS)
+  
+  use_database <- FALSE
+  
+  if(use_database) {
+    library(thlConnect)
+    con <- thlDbConnect("pubhealth",dbengine = "postgresql")
+    
+    #dbi <- thlDbInfo("pubhealth",dbengine="postgresql",driver="JDBC")
+    
+    pops <- thlJdbcQuery(con, "SELECT * FROM envhealth.dioxdisthuman;")
+    colnames(pops) <- paste0(toupper(substring(colnames(pops),1,1)), substring(colnames(pops),2))
+    colnames(pops)[match(c("Popsresult","Popssource"),colnames(pops))] <- c("popsResult","popsSource")
+    pops <- Ovariable("pops", output=pops, marginal=(colnames(pops)!="popsResult"), unit="pg/g")
+  } else {
+    load(file="../Dioxdistboys/pops_ovariable")
+  }
+  
+  # PCBs of interest (the order of decreasing correlation with SUM-TEQ will be determined automatically later)
+  pcb9 <- c("PCB118","PCB138","PCB74","PCB156","PCB153","PCB99","PCB187","PCB170","PCB180")
+  
+  teq3 <- c("PCDDF_TEQ", "PCB_TEQ", "Total_TEQ")
+  
+  # "Seven marker PCBs": 28, 52, 101, 118, 138, 153, and 180
+  # "Six marker PCBs": 28, 52, 101, 138, 153, and 180
+  
+  # Why are 28, 52, 101 missing from nine marker PCBs?
+  # 52 and 101 were measured but too much <LOQ that they were omitted.
+  # 28 was measured, too. Not known why it was not used.
+  
+  # Adjust for LOQ if not detected. This applies to mothers only as men's <LOQs were replaced already and none in boys
+  
+  LOQ <- oapply(pops, c("Compound","Year"), function(x) min(x[x>0]))
+  colnames(LOQ@output)[colnames(LOQ@output)=="popsResult"] <- "LOQResult"
+  LOQ@name <- "LOQ"
+  
+  # LOQ <- LOQ     # Use upper-bound estimate
+  # LOQ <- LOQ / 2 # Use medium-bound estimate
+  LOQ <- LOQ / 10 # Use lower-bound estimate
+    
+  pops <- pops + LOQ * (pops==0)
+  
+  # Calculate and add TEQ values to the data
+  
+  objects.latest("Op_en4017", "initiate") # [[Toxic equivalency factor]] TEF
+  TEF <- EvalOutput(TEF)
+  levels(TEF$Compound) <- toupper(levels(TEF$Compound))
+  
+  popteq <- pops * TEF
+  
+  tmp1 <- oapply(popteq[popteq$Group %in% c("Chlorinated dibenzo-p-dioxins", "Chlorinated dibenzofurans")],NULL,sum,c("Compound","Group"))
+  tmp2 <- oapply(popteq[popteq$Group %in% c("Non-ortho-substituted PCBs", "Mono-ortho-substituted PCBs")],NULL,sum,c("Compound","Group"))
+  tmp3 <- tmp1 + tmp2
+  tmp1$Compound <- "PCDDF_TEQ"
+  tmp2$Compound <- "PCB_TEQ"
+  tmp3$Compound <- "Total_TEQ"
+  
+  pop <- OpasnetUtils::combine(pops, tmp1, tmp2, tmp3, name="pop")
+  pop <- pop[!(pop$Subgroup=="Child" & pop$Compound=="PCB_TEQ") , ] # Remove because children do not have all PCBs
+  
+  #### Make pop_w with wide format congener table
+  
+  pop_w <- log(pop)
+  
+  pop_w <-  reshape(
+    pop_w@output[
+      pop_w$Age != "17-19" & pop_w$Compound %in% c(pcb9, teq3) , # Remove adult patients from LASERI
+      c("Id","Subgroup","Compound","popResult")],
+    v.names = "popResult",
+    idvar="Id",
+    timevar = "Compound",
+    direction="wide")
+  colnames(pop_w) <- gsub("popResult.", "", colnames(pop_w))
+  
+  ###### Add rows for Women and Donors without TEQ so that predictions are made
+  
+  pop_w <- rbind(
+    pop_w,
+    cbind(Subgroup=paste0(pop_w$Subgroup,"_pred"), pop_w[colnames(pop_w)!="Subgroup"])
+  )
+  pop_w[grepl("_pred",pop_w$Subgroup),teq3] <- NA
 
-if(use_database) {
-  library(thlConnect)
-  con <- thlDbConnect("pubhealth",dbengine = "postgresql")
-  
-  #dbi <- thlDbInfo("pubhealth",dbengine="postgresql",driver="JDBC")
-  
-  pops <- thlJdbcQuery(con, "SELECT * FROM envhealth.dioxdisthuman;")
-  colnames(pops) <- paste0(toupper(substring(colnames(pops),1,1)), substring(colnames(pops),2))
-  colnames(pops)[match(c("Popsresult","Popssource"),colnames(pops))] <- c("popsResult","popsSource")
-  pops <- Ovariable("pops", output=pops, marginal=(colnames(pops)!="popsResult"), unit="pg/g")
-} else {
-  load(file="../Dioxdistboys/pops_ovariable")
 }
-
-# PCBs of interest (the order of decreasing correlation with SUM-TEQ will be determined automatically later)
-pcb9 <- c("PCB118","PCB138","PCB74","PCB156","PCB153","PCB99","PCB187","PCB170","PCB180")
-
-teq3 <- c("PCDDF_TEQ", "PCB_TEQ", "Total_TEQ")
-
-# "Seven marker PCBs": 28, 52, 101, 118, 138, 153, and 180
-# "Six marker PCBs": 28, 52, 101, 138, 153, and 180
-
-# Why are 28, 52, 101 missing from nine marker PCBs?
-# 52 and 101 were measured but too much <LOQ that they were omitted.
-# 28 was measured, too. Not known why it was not used.
-
-# Adjust for LOQ if not detected. This applies to mothers only as men's <LOQs were replaced already and none in boys
-
-LOQ <- oapply(pops, c("Compound","Year"), function(x) min(x[x>0]))
-colnames(LOQ@output)[colnames(LOQ@output)=="popsResult"] <- "LOQResult"
-LOQ@name <- "LOQ"
-
-# LOQ <- LOQ     # Use upper-bound estimate
-# LOQ <- LOQ / 2 # Use medium-bound estimate
-LOQ <- LOQ / 10 # Use lower-bound estimate
-  
-pops <- pops + LOQ * (pops==0)
-
-# Calculate and add TEQ values to the data
-
-objects.latest("Op_en4017", "initiate") # [[Toxic equivalency factor]] TEF
-TEF <- EvalOutput(TEF)
-levels(TEF$Compound) <- toupper(levels(TEF$Compound))
-
-popteq <- pops * TEF
-
-tmp1 <- oapply(popteq[popteq$Group %in% c("Chlorinated dibenzo-p-dioxins", "Chlorinated dibenzofurans")],NULL,sum,c("Compound","Group"))
-tmp2 <- oapply(popteq[popteq$Group %in% c("Non-ortho-substituted PCBs", "Mono-ortho-substituted PCBs")],NULL,sum,c("Compound","Group"))
-tmp3 <- tmp1 + tmp2
-tmp1$Compound <- "PCDDF_TEQ"
-tmp2$Compound <- "PCB_TEQ"
-tmp3$Compound <- "Total_TEQ"
-
-pop <- OpasnetUtils::combine(pops, tmp1, tmp2, tmp3, name="pop")
-pop <- pop[!(pop$Subgroup=="Child" & pop$Compound=="PCB_TEQ") , ] # Remove because children do not have all PCBs
-
-#### Make pop_w with wide format congener table
-
-pop_w <- log(pop)
-
-pop_w <-  reshape(
-  pop_w@output[
-    pop_w$Age != "17-19" & pop_w$Compound %in% c(pcb9, teq3) , # Remove adult patients from LASERI
-    c("Id","Subgroup","Compound","popResult")],
-  v.names = "popResult",
-  idvar="Id",
-  timevar = "Compound",
-  direction="wide")
-colnames(pop_w) <- gsub("popResult.", "", colnames(pop_w))
-
-###### Add rows for Women and Donors without TEQ so that predictions are made
-
-pop_w <- rbind(
-  pop_w,
-  cbind(Subgroup=paste0(pop_w$Subgroup,"_pred"), pop_w[colnames(pop_w)!="Subgroup"])
-)
-pop_w[grepl("_pred",pop_w$Subgroup),teq3] <- NA
 
 ```
 
@@ -249,28 +256,31 @@ pop_w[grepl("_pred",pop_w$Subgroup),teq3] <- NA
 
 ```{r plots}
 
-ggplot(pop@output[pop$Subgroup=="Child",], aes(x=popResult, colour=Center))+stat_ecdf()+scale_x_log10()+
-  facet_wrap(~Compound)+
-  labs(title="PCB congener concentrations in children")
+if(params$run_preprocess) {
+  ggplot(pop@output[pop$Subgroup=="Child",], aes(x=popResult, colour=Center))+stat_ecdf()+scale_x_log10()+
+    facet_wrap(~Compound)+
+    labs(title="PCB congener concentrations in children")
+  
+  ggplot(pop@output[pop$Subgroup=="Woman" & pop$Compound %in% c(pcb9, teq3),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
+    facet_wrap(~Compound, scales="free_x")+
+    labs(title="PCB and TEQ concentrations in mothers")
+  
+  ggplot(pop@output[pop$Subgroup=="Woman" & !grepl("PCB",pop$Compound),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
+    facet_wrap(~Compound, scales="free_x")+
+    labs(title="PCDD/F concentrations in mothers")
+  
+  ggplot(pop@output[pop$Compound %in% pcb9 , ], aes(x=popResult, colour=factor(Year), linetype=Subgroup))+stat_ecdf()+scale_x_log10()+
+    facet_wrap(~Compound, scales="free_x")
+  
+  library(psych)
+  pairs.panels(pop_w[c(pcb9,teq3)], 
+               method = "pearson", # correlation method
+               hist.col = "#00AFBB",
+               density = TRUE,  # show density plots
+               ellipses = TRUE # show correlation ellipses
+               )
 
-ggplot(pop@output[pop$Subgroup=="Woman" & pop$Compound %in% c(pcb9, teq3),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
-  facet_wrap(~Compound, scales="free_x")+
-  labs(title="PCB and TEQ concentrations in mothers")
-
-ggplot(pop@output[pop$Subgroup=="Woman" & !grepl("PCB",pop$Compound),], aes(x=popResult, colour=factor(Year)))+stat_ecdf()+scale_x_log10()+
-  facet_wrap(~Compound, scales="free_x")+
-  labs(title="PCDD/F concentrations in mothers")
-
-ggplot(pop@output[pop$Compound %in% pcb9 , ], aes(x=popResult, colour=factor(Year), linetype=Subgroup))+stat_ecdf()+scale_x_log10()+
-  facet_wrap(~Compound, scales="free_x")
-
-library(psych)
-pairs.panels(pop_w[c(pcb9,teq3)], 
-             method = "pearson", # correlation method
-             hist.col = "#00AFBB",
-             density = TRUE,  # show density plots
-             ellipses = TRUE # show correlation ellipses
-             )
+}
 
 ```
 
@@ -288,97 +298,100 @@ congeners and all different sums were added to a regression model and two-way in
 ```{r regressions}
 #Explanatory power of different models (linear regression)
 
-stati <- data.frame()
-
-# 1. Model using a single independent variable
-
-for(j in teq3) {
-  for(i in pcb9) {
-    dep <- i
-    stati <- rbind(
-      stati,
-      data.frame(
-        Model = "single",
-        Dependent = j,
-        Independents = dep,
-        AdjR = summary(lm(as.formula(paste(j, "~", dep)), data = pop_w))[["adj.r.squared"]]
+if(params$run_preprocess) {
+  stati <- data.frame()
+  
+  # 1. Model using a single independent variable
+  
+  for(j in teq3) {
+    for(i in pcb9) {
+      dep <- i
+      stati <- rbind(
+        stati,
+        data.frame(
+          Model = "single",
+          Dependent = j,
+          Independents = dep,
+          AdjR = summary(lm(as.formula(paste(j, "~", dep)), data = pop_w))[["adj.r.squared"]]
+        )
       )
-    )
+    }
   }
-}
-
-##### Sort pbc9 to match the explanatory power
-
-pcb9 <- stati[stati$Model=="single" & stati$Dependent=="Total_TEQ",]
-pcb9 <- as.character(pcb9$Independents[order(-pcb9$AdjR)])
-
-stati$Independents <- factor(stati$Independents, levels=pcb9)
-
-
-# 2. Model using all independent variables up to the one mentioned
-
-for(j in teq3) {
-  for(i in 1:length(pcb9)) {
-    dep <- pcb9[1:i]
-    stati <- rbind(
-      stati,
-      data.frame(
-        Model = "all-up-to",
-        Dependent = j,
-        Independents = pcb9[i],
-        AdjR = summary(lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data = pop_w))[["adj.r.squared"]]
+  
+  ##### Sort pbc9 to match the explanatory power
+  
+  pcb9 <- stati[stati$Model=="single" & stati$Dependent=="Total_TEQ",]
+  pcb9 <- as.character(pcb9$Independents[order(-pcb9$AdjR)])
+  
+  stati$Independents <- factor(stati$Independents, levels=pcb9)
+  
+  
+  # 2. Model using all independent variables up to the one mentioned
+  
+  for(j in teq3) {
+    for(i in 1:length(pcb9)) {
+      dep <- pcb9[1:i]
+      stati <- rbind(
+        stati,
+        data.frame(
+          Model = "all-up-to",
+          Dependent = j,
+          Independents = pcb9[i],
+          AdjR = summary(lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data = pop_w))[["adj.r.squared"]]
+        )
       )
-    )
+    }
   }
-}
-
-# 3. Model using a sum of all up to the one mentioned
-
-for(j in teq3) {
-  for(i in 1:length(pcb9)) {
-    pop_w$tmp <- rowSums(pop_w[pcb9[1:i]])
-    stati <- rbind(
-      stati,
-      data.frame(
-        Model="sum-up-to",
-        Dependent = j,
-        Independents = pcb9[i],
-        AdjR = summary(lm(as.formula(paste(j, "~ tmp")), data = pop_w))[["adj.r.squared"]]
+  
+  # 3. Model using a sum of all up to the one mentioned
+  
+  for(j in teq3) {
+    for(i in 1:length(pcb9)) {
+      pop_w$tmp <- rowSums(pop_w[pcb9[1:i]])
+      stati <- rbind(
+        stati,
+        data.frame(
+          Model="sum-up-to",
+          Dependent = j,
+          Independents = pcb9[i],
+          AdjR = summary(lm(as.formula(paste(j, "~ tmp")), data = pop_w))[["adj.r.squared"]]
+        )
       )
-    )
+    }
   }
-}
-
-# [1] "PCDDF_TEQ" "PCB_TEQ"   "Total_TEQ"
-levels(stati$Dependent) <- c("PCDD/F TEQ", "PCB TEQ", "Total TEQ")
-
-ggplot(stati, aes(x=Independents, y=AdjR, color=Model, group=Model))+geom_line(size=1.5)+
-  facet_grid(.~Dependent)+
-  scale_color_manual(values=c(light,dark,ruby))+
-  labs(
-#    title="Explanatory power of PCB combinations on TEQ",
-    y="Adjusted R-squared",
-    x="PCB congener"
-  )+
-  theme_thl(legend.position="bottom", base_size=18, base_family = "source", axis.text.x=element_text(angle=90, vjust=0.5))
-
-ggsave("Explanatory_power_of_PCB_on_TEQ.pdf",width=16/2.54, height=18/2.54)
-
-# 4. Model using AIC to find the best set of variables from congeners and congener sums
-
-for(j in teq3) {
-  dep <- pcb9
-  mod <- lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data=na.omit(pop_w[c(j, pcb9)]))
-  print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
-}
-
-# 5. Model using AIC to find the best set of variables from congeners and all two-way interaction terms
-
-for(j in teq3) {
-  dep <- c(pcb9)
-  mod <- lm(as.formula(paste(j, "~ (", paste(dep,collapse=" + "), ")^2")), data=pop_w)
-  print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
-
+  
+  # [1] "PCDDF_TEQ" "PCB_TEQ"   "Total_TEQ"
+  levels(stati$Dependent) <- c("PCDD/F TEQ", "PCB TEQ", "Total TEQ")
+  
+  ggplot(stati, aes(x=Independents, y=AdjR, color=Model, group=Model))+geom_line(size=1.5)+
+    facet_grid(.~Dependent)+
+    scale_color_manual(values=c(light,dark,ruby))+
+    labs(
+  #    title="Explanatory power of PCB combinations on TEQ",
+      y="Adjusted R-squared",
+      x="PCB congener"
+    )+
+    theme_thl(legend.position="bottom", base_size=18, base_family = "source", axis.text.x=element_text(angle=90, vjust=0.5))
+  
+  ggsave("Explanatory_power_of_PCB_on_TEQ.pdf",width=16/2.54, height=18/2.54)
+  
+  # 4. Model using AIC to find the best set of variables from congeners and congener sums
+  
+  for(j in teq3) {
+    dep <- pcb9
+    mod <- lm(as.formula(paste(j, "~", paste(dep,collapse=" + "))), data=na.omit(pop_w[c(j, pcb9)]))
+    print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
+  }
+  
+  # 5. Model using AIC to find the best set of variables from congeners and all two-way interaction terms
+  
+  for(j in teq3) {
+    dep <- c(pcb9)
+    mod <- lm(as.formula(paste(j, "~ (", paste(dep,collapse=" + "), ")^2")), data=pop_w)
+    print(summary(stepAIC(mod, direction = "both", trace = FALSE)))
+  
+  }
+  
 }
 
 ```
@@ -453,7 +466,6 @@ if(params$run_bayes) {
   library(OpasnetUtils)
   library(reshape2)
   library(rjags) # JAGS
-  library(ggplot2)
   library(MASS) # mvrnorm
   library(car) # scatterplotMatrix
   
@@ -860,8 +872,6 @@ ggplot(tmp) +
     x="Total TEQ (pg/g fat)"
   )
 
-library(ggplot2)
-
 tst <- density(Sample$value, n=2^12, from=0)
 ggplot(data.frame(x=tst$x, y=tst$y), aes(x,y))+
   geom_segment(aes(xend=tst$x, yend=0, colour=tst$x>7))+
@@ -881,7 +891,7 @@ ggplot(data.frame(x=tst$x, y=tst$y), aes(x,y))+
   scale_x_continuous(labels=scales::comma_format(decimal.mark = ",", big.mark=" "))
 
 
-ggsave("Lasten jakauma NOAElin suhteen.png", width=16/2.54, height=10/2.54)
+ggsave("Lasten jakauma NOAElin suhteen.pdf", width=16/2.54, height=10/2.54)
 
 ```
 
