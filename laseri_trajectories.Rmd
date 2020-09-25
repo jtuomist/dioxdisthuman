@@ -1,0 +1,120 @@
+---
+title: "LASERI-trajectories"
+author: "Jouni Tuomisto"
+date: '2020-09-25'
+output:
+  word_document: default
+  html_document: default
+params:
+  'FALSE': 500
+  adjusted_theme_thl: yes
+  run_bayes: yes
+  run_preprocess: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This analysis produces a model for trajectories of human body burdens of persistent organic pollutants (POPs).
+
+```{r preprocess}
+library(foreign)
+
+df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-aineistossa/updated_korjattu_LASERI_data_2020_05_WORKCOPY.sav", to.data.frame = TRUE)
+
+library(psych)
+
+colnames(df)[grep("PI",toupper(colnames(df)))]
+
+# Take all-male panel of interesting variables
+df <- df[df$SP=="Poika", c("PCB_Sum80","PCB_Sum01","SYNTVUOSI", "BMI80","BMI01","Paino01","bodyfat80","bodyfat92")]
+
+pairs.panels(df)
+
+df$Age80 <- 1980 - df$SYNTVUOSI
+df$Age01 <- 2001 - df$SYNTVUOSI
+df <- merge(df, data.frame(
+  Age80 = c(0:20,21:30, 31:40),
+  Paino80 = c(5,10,13,15,17,20,22,26,28,31,35,38,44,48,55,60,65,68,70,71,72, rep(75,10),rep(80,10))
+  )
+)
+
+
+aggregate(df$Paino01, by=df[c("Age80")], FUN=function(x) mean(x, na.rm=TRUE))
+
+```
+
+## Bayesian hierachical model
+
+```{r bayes}
+# This was forked from Dioxdistboys_individual_rows.Rmd and
+# originally from code Op_en3104/bayes on page [[EU-kalat]]
+
+if(FALSE){
+if(params$run_bayes) {
+  library(OpasnetUtils)
+  library(reshape2)
+  library(rjags) # JAGS
+  library(MASS) # mvrnorm
+  library(car) # scatterplotMatrix
+  
+  N <- params$N # defined as render parameter
+  
+  # Hierarchical Bayes model.
+  
+  mod <- textConnection(
+    "
+    model{
+      for(p in POP) { # TEQ columns (after pcb9 columns)
+        tau[j] ~ dgamma(1.0, 1.0)
+        for(o in Observations) { 
+          #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
+          teq[i,j] ~ dnorm(mu[i,j], tau[j])
+  
+          mu[o,year] <-  intake[year] / k - c * exp (-k * t) / bodyfat[o,year]
+        }
+        for(k in K) {
+          b[j,k] ~ dnorm(0, 0.0001) # Congener-specific coefficient for TEQs
+        }
+      }
+    }
+  ")
+  
+  jags <- jags.model(
+    mod,
+    data = list(
+      Observations = 1:nrow(df),
+      POP = 1:2,
+      YEAR = 1:2,
+      conc = data.matrix(df[c("PCB_Sum80","PCB_Sum01")]), 
+      teq = data.matrix(df[teq3]),
+      bodyfat = data.matrix(df[c("bodyfat80","bodyfat92")])
+    ),
+    n.chains = 4,
+    n.adapt = 1000
+  )
+  
+  samps.j <- jags.samples(
+    jags, 
+    c(
+      'mu', 
+      'tau',
+      'b',
+      'teq'
+    ), 
+    thin=100,
+    N*100
+  )
+
+  
+}
+}
+```
+
+```{r}
+
+
+```
