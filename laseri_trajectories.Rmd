@@ -26,11 +26,11 @@ library(psych)
 
 df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-aineistossa/updated_korjattu_LASERI_data_2020_05_WORKCOPY.sav", to.data.frame = TRUE)
 
-colnames(df)[grep("PI",toupper(colnames(df)))]
+#colnames(df)[grep("PI",toupper(colnames(df)))]
 
 # Take all-male panel of interesting variables
-df <- df[df$SP=="Poika", c("PCB_Sum80","PCB_Sum01","SYNTVUOSI", "BMI80","BMI01","Paino01","bodyfat80","bodyfat92")]
-
+df <- df[df$SP=="Poika", c("PCB_Sum80","PCB_Sum01","SYNTVUOSI", "BMI80","BMI01","Paino01")] # ,"bodyfat80","bodyfat92"
+df <- na.omit(df)
 # FAKE DATA FOR MODEL CHECKING
 #df <- data.frame(SYNTVUOSI=1962:1966,BMI80=24,BMI01=26,Paino01=c(90,80,70,60,50))
 pairs.panels(df)
@@ -69,7 +69,8 @@ P <- rep(1,length(AGE)) # age-specific intake relative to lifetime average
 
 
 ```{r deterministic}
-
+library(ggplot2)
+ggplot(df, aes(x=PCB_Sum80, y=PCB_Sum01, size=Paino01, colour=SYNTVUOSI))+geom_point()
 
 ```
 ## Bayesian hierachical model
@@ -81,7 +82,7 @@ P <- rep(1,length(AGE)) # age-specific intake relative to lifetime average
 ## This code builds an iterative model with varying intake
 ## https://github.com/jtuomist/dioxdisthuman/wiki#iterative-model-with-varying-intake-primary-choice
 
-if(params$run_bayes) {
+#if(params$run_bayes) {
   library(OpasnetUtils)
   library(reshape2)
   library(rjags) # JAGS
@@ -96,6 +97,7 @@ k <- 0.1 # 1/a, elimination constant of the POP
 a <- 2 # mg/kg/d, average intake at the peak exposure
 E <- rep(0, length(YEAR))
 H <- length(AGE)
+I <- length(INDIVIDUAL)
 #E <- pmax(0,a*b*exp(1)*(YEAR-c+1/b)*exp(-b*(YEAR-c+1/b)))
 #B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
 #for(y in 2:length(AGE)) {
@@ -112,22 +114,20 @@ B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
 
   mod <- textConnection(
     "
-    var k, a, b, U, E[61], C[5,H], B[5,H], M[5,H], C1, C2, conc[5,2], SYNT[5],
+    var k, a, b, U, E[61], C[I,H], B[I,H], M[I,H], C1, C2, conc[I,2], SYNT[I],
     B1[I], B2[I], B3[I], B4[I], B5[I], B6[I], B7[I], B8[I], B9[I], B10[I], B11[I],
     B12[I], B13[I], B14[I], B15[I], B16[I], B17[I], B18[I], B19[I], B20[I], B21[I], B22[I],
     B23[I], B24[I], B25[I], B26[I], B27[I], B28[I], B29[I], B30[I], B31[I], B32[I], B33[I],
     B34[I], B35[I], B36[I], B37[I], B38[I], B39[I], B40[I], B41[I];
     model{
       #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
-      k ~ dnorm(0.1, 0.01)
-      a ~ dnorm(2, 0.01)
+      k ~ dnorm(0.1, 0.001)
+      a ~ dnorm(2, 0.001)
+      tau[1] ~ dgamma(1.0,1.0) 
+      tau[2] ~ dgamma(1.0,1.0) 
       for(year in YEAR) {
         E[year-1959] <- max(0,a*b*exp(1)*(year-c+1/b)*exp(-b*(year-c+1/b)))
       }
-#      B[,1] <- B[,1]*0
-#      for(y in 2:length(AGE)) {
-#        B[,y] <- B[,y-1] * (1 - k) + U * A * W[,y-1] * E[SYNT[]-1960+y-1] * P[y-1]
-#      }
       B2[] <-  B1[] * (1 - k) + U * A * W[,1] * E[SYNT[]-1960+1] * P[1]
       B3[] <-  B2[] * (1 - k) + U * A * W[,2] * E[SYNT[]-1960+2] * P[2]
       B4[] <-  B3[] * (1 - k) + U * A * W[,3] * E[SYNT[]-1960+3] * P[3]
@@ -212,8 +212,10 @@ B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
       C[,41] <- B41 / M[,41]
       
       for(i in 1:I) { 
-        conc[i,1] ~ dnorm(C[i,1980 - SYNT[i]+1], 0.01) # Age 0 is at position 1
-        conc[i,2] ~ dnorm(C[i,2001 - SYNT[i]+1], 0.01)
+        conc[i,1] ~ dnorm(C[i,1980 - SYNT[i]+1], tau[1]) # Age 0 is at position 1
+        conc[i,2] ~ dnorm(C[i,2001 - SYNT[i]+1], tau[2])
+        pred[i,1] ~ dnorm(C[i,1980 - SYNT[i]+1], tau[1])
+        pred[i,2] ~ dnorm(C[i,2001 - SYNT[i]+1], tau[2])
       }
     }
   ")
@@ -224,18 +226,18 @@ B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
 #      INDIVIDUAL = INDIVIDUAL,
 #      AGE = AGE,
       YEAR = YEAR,
-      W = W[1:5,1:H],
-      M = M[1:5,1:H],
+      W = W[1:I,1:H],
+      M = M[1:I,1:H],
       H = H,
-      I = 5,#length(INDIVIDUAL),
+      I = I,
       U = U,
       A = A,
       b = b,
       c = c,
       P = P[1:H],
-      SYNT = df$SYNTVUOSI[1:5],
-      conc = df[1:5,c("PCB_Sum80","PCB_Sum01")],
-      B1 = rep(0,5)
+      SYNT = df$SYNTVUOSI[1:I],
+      conc = df[1:I,c("PCB_Sum80","PCB_Sum01")],
+      B1 = rep(0,I)
     ),
     n.chains = 4,
     n.adapt = 1000
@@ -245,20 +247,26 @@ B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
     jags, 
     c(
       'k', 
-      'a'
+      'a',
+      'tau',
+      'pred'
     ), 
-    thin=100,
-    N*100
+    thin=1,
+    N*1
   )
 
   #scatterplotMatrix(samps.j$k, main="Elimination constant k")
     
   cat("Elimination constant k (1/a)\n")  
   plot(coda.samples(jags, 'k', N))
-  cat("Average exposure during peak year (mg/kg/d\n")
+  cat("Average exposure during peak year (mg/kg/d)\n")
   plot(coda.samples(jags, 'a', N))
-    
-}
+  cat("Concentration precision\n")
+  plot(coda.samples(jags, 'tau', N))
+  cat("Predicted concentration\n")
+#  plot(coda.samples(jags, 'pred', N))
+  
+#}
 
 ```
 
