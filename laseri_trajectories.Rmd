@@ -22,38 +22,65 @@ This analysis produces a model for trajectories of human body burdens of persist
 
 ```{r preprocess}
 library(foreign)
+library(psych)
 
 df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-aineistossa/updated_korjattu_LASERI_data_2020_05_WORKCOPY.sav", to.data.frame = TRUE)
-
-library(psych)
 
 colnames(df)[grep("PI",toupper(colnames(df)))]
 
 # Take all-male panel of interesting variables
 df <- df[df$SP=="Poika", c("PCB_Sum80","PCB_Sum01","SYNTVUOSI", "BMI80","BMI01","Paino01","bodyfat80","bodyfat92")]
 
+# FAKE DATA FOR MODEL CHECKING
+#df <- data.frame(SYNTVUOSI=1962:1966,BMI80=24,BMI01=26,Paino01=c(90,80,70,60,50))
 pairs.panels(df)
 
-df$Age80 <- 1980 - df$SYNTVUOSI
-df$Age01 <- 2001 - df$SYNTVUOSI
-df <- merge(df, data.frame(
-  Age80 = c(0:20,21:30, 31:40),
-  Paino80 = c(5,10,13,15,17,20,22,26,28,31,35,38,44,48,55,60,65,68,70,71,72, rep(75,10),rep(80,10))
-  )
-)
+## Indices used
 
+AGE <- 0:40
+YEAR <- 1960:2020
+INDIVIDUAL <- 1:nrow(df)
+U <- 365 # unit conversion factor: 1/d --> 1/a
+A <- 0.9 # fraction, absorption fraction
 
-aggregate(df$Paino01, by=df[c("Age80")], FUN=function(x) mean(x, na.rm=TRUE))
+# https://www.kasvuseula.fi/
+W <- t(matrix(rep(c(5,10,13,15,17,20,22,26,28,31,35,38,44,48,55,60,65,68,70,71,72,
+                    rep(75,10),rep(80,10)),length(INDIVIDUAL)),
+              nrow=length(AGE), dimnames=list(Age=AGE, Individual = INDIVIDUAL)))
+
+# A simplistic model uses the population average as default until the weight reaches the
+# observed value of that individual. Then, actual value is used to replace 80 kg (the max default),
+# if larger. This leads to situation where people suddenly gain weight when at 31 or at 2001.
+W <- pmin(W, df$Paino01, na.rm = TRUE)
+W <- ifelse(W==80, pmax(W, df$Paino01, na.rm=TRUE), W)
+tmp <- df$SYNTVUOSI + matrix(rep(AGE,each=length(INDIVIDUAL)),nrow=length(INDIVIDUAL))>=2001
+W <- ifelse(!is.na(df$Paino01) & tmp, df$Paino01, W)
+
+# A simplistic model that assumes that average BMI is equal to lifetime fat percentage.
+M <- W * ifelse(is.na(df$BMI01), df$BMI80, (df$BMI80 + df$BMI01)/2) / 100
+
+b <- 0.2 # 1/a, rate of decrease of the POP in the environment and intake
+c <- 1960 # year of peak exposure
+P <- rep(1,length(AGE)) # age-specific intake relative to lifetime average
+
+#aggregate(df$Paino01, by=df[c("Age80")], FUN=function(x) mean(x, na.rm=TRUE))
 
 ```
 
+
+```{r deterministic}
+
+
+```
 ## Bayesian hierachical model
 
 ```{r bayes}
 # This was forked from Dioxdistboys_individual_rows.Rmd and
 # originally from code Op_en3104/bayes on page [[EU-kalat]]
 
-if(FALSE){
+## This code builds an iterative model with varying intake
+## https://github.com/jtuomist/dioxdisthuman/wiki#iterative-model-with-varying-intake-primary-choice
+
 if(params$run_bayes) {
   library(OpasnetUtils)
   library(reshape2)
@@ -65,20 +92,46 @@ if(params$run_bayes) {
   
   # Hierarchical Bayes model.
   
+k <- 0.1 # 1/a, elimination constant of the POP
+a <- 2 # mg/kg/d, average intake at the peak exposure
+E <- rep(0, length(YEAR))
+#E <- pmax(0,a*b*exp(1)*(YEAR-c+1/b)*exp(-b*(YEAR-c+1/b)))
+#B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
+#for(y in 2:length(AGE)) {
+#  B[,y] <- B[,y-1] * (1 - k) + U * A * W[,y-1] * E[df$SYNTVUOSI-1960+y-1] * P[y-1]
+#}
+
+#C <- B / M
+#Ct <- cbind(
+#  V1980=C[cbind(1:length(INDIVIDUAL),1980 - df$SYNTVUOSI+1)], # Age 0 is at position 1
+#  V2001=C[cbind(1:length(INDIVIDUAL),2001 - df$SYNTVUOSI+1)]
+#)
+
+B <- matrix(rep(0,length(AGE)*length(INDIVIDUAL)),ncol=length(AGE))
+
   mod <- textConnection(
     "
+    var k, a, b, U, E[61], C[5,41], B[5,41], M[5,41], C1, C2, conc[5,2], SYNT[5], tmp[5];
     model{
-      for(p in POP) { # TEQ columns (after pcb9 columns)
-        tau[j] ~ dgamma(1.0, 1.0)
-        for(o in Observations) { 
-          #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
-          teq[i,j] ~ dnorm(mu[i,j], tau[j])
-  
-          mu[o,year] <-  intake[year] / k - c * exp (-k * t) / bodyfat[o,year]
-        }
-        for(k in K) {
-          b[j,k] ~ dnorm(0, 0.0001) # Congener-specific coefficient for TEQs
-        }
+      #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
+      k ~ dnorm(0.1, 0.01)
+      a ~ dnorm(2, 0.01)
+      for(year in YEAR) {
+        E[year-1959] <- max(0,a*b*exp(1)*(year-c+1/b)*exp(-b*(year-c+1/b)))
+      }
+      B[,1] <- B[,1]*0
+      for(y in 2:length(AGE)) {
+        tmp[] <- B[,y-1] * (1 - k) + U * A * W[,y-1] * E[SYNT[]-1960+y-1] * P[y-1]
+        B[,y] <- tmp[]
+      }
+      
+      C[,] <- 1 / M[,]
+      
+      for(i in INDIVIDUAL) { 
+#        C1 <-  # Age 0 is at position 1
+#        C2 <- 
+        conc[i,1] ~ dnorm(C[i,1980 - SYNT[i]+1], 0.01)
+        conc[i,2] ~ dnorm(C[i,2001 - SYNT[i]+1], 0.01)
       }
     }
   ")
@@ -86,12 +139,18 @@ if(params$run_bayes) {
   jags <- jags.model(
     mod,
     data = list(
-      Observations = 1:nrow(df),
-      POP = 1:2,
-      YEAR = 1:2,
-      conc = data.matrix(df[c("PCB_Sum80","PCB_Sum01")]), 
-      teq = data.matrix(df[teq3]),
-      bodyfat = data.matrix(df[c("bodyfat80","bodyfat92")])
+      INDIVIDUAL = INDIVIDUAL,
+      AGE = AGE,
+      YEAR = YEAR,
+      W = W,
+      M = M,
+      U = U,
+      A = A,
+      b = b,
+      c = c,
+      P = P,
+      SYNT = 1962:1966,
+      conc = df[1:5,c("PCB_Sum80","PCB_Sum01")]
     ),
     n.chains = 4,
     n.adapt = 1000
@@ -111,7 +170,7 @@ if(params$run_bayes) {
 
   
 }
-}
+
 ```
 
 ```{r}
