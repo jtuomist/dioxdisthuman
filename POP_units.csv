@@ -1,0 +1,99 @@
+Compound,Unit
+PeCB80,pg/ml serum
+HCB80,pg/ml serum
+alfa_HCH80,pg/ml serum
+alfa_HCH80_LOQ,binary <LOQ/>LOQ variable
+beta_HCH80,pg/ml serum
+gamma_HCH80,pg/ml serum
+gamma_HCH80_LOQ,binary <LOQ/>LOQ variable
+Trans_nonakloori80,pg/ml serum
+pp_DDT80,pg/ml serum
+pp_DDE80,pg/ml serum
+PCB_Sum80,pg/ml serum
+PFHpA80,ng/ml serum
+PFHpA80_LOQ,binary <LOQ/>LOQ variable
+PFOA80,ng/ml serum
+PFNA80,ng/ml serum
+PFHxS80,ng/ml serum
+PFHxS80_LOQ,binary <LOQ/>LOQ variable
+PFOS80,ng/ml serum
+kotiniini80,ng/ml serum
+PCB7480,pg/ml serum
+PCB9980,pg/ml serum
+PCB11880,pg/ml serum
+PCB15380,pg/ml serum
+PCB13880,pg/ml serum
+PCB15680,pg/ml serum
+PCB18780,pg/ml serum
+PCB18380,pg/ml serum
+PCB18080,pg/ml serum
+PCB17080,pg/ml serum
+HCB01,pg/ml serum
+beta_HCH01,pg/ml serum
+bHCH01_LOQ,binary <LOQ/>LOQ variable
+Trans_nonakloori01,pg/ml serum
+pp_DDT01,pg/ml serum
+DDT01_LOQ,binary <LOQ/>LOQ variable
+pp_DDE01,pg/ml serum
+PCB_Sum01,pg/ml serum
+BDE4701,pg/ml serum
+BDE47_LOQ,binary <LOQ/>LOQ variable
+PFOA01,ng/ml serum
+PFNA01,ng/ml serum
+PFNA01_LOQ,binary <LOQ/>LOQ variable
+PFDA01,ng/ml serum
+PFDA01_LOQ,binary <LOQ/>LOQ variable
+PFUnA01,ng/ml serum
+PFUnA01_LOQ,binary <LOQ/>LOQ variable
+PFHxS01,ng/ml serum
+PFHxS01_LOQ,binary <LOQ/>LOQ variable
+PFOS01,ng/ml serum
+kotiniini01,ng/ml serum
+PCB7401,pg/ml serum
+PCB9901,pg/ml serum
+PCB11801,pg/ml serum
+PCB15301,pg/ml serum
+PCB13801,pg/ml serum
+PCB15601,pg/ml serum
+PCB18701,pg/ml serum
+PCB18301,pg/ml serum
+PCB18001,pg/ml serum
+PCB17001,pg/ml serum
+HCB01_norm,ng/g fat
+alfa_HCH01_norm,ng/g fat
+alfa_HCH01,ng/g fat
+beta_HCH01_norm,ng/g fat
+Trans_nonakloori01_norm,ng/g fat
+pp_DDT01_norm,ng/g fat
+pp_DDE01_norm,ng/g fat
+PCB7401_norm,ng/g fat
+PCB9901_norm,ng/g fat
+PCB11801_norm,ng/g fat
+PCB15301_norm,ng/g fat
+PCB13801_norm,ng/g fat
+PCB15601_norm,ng/g fat
+PCB18701_norm,ng/g fat
+PCB18301_norm,ng/g fat
+PCB18001_norm,ng/g fat
+PCB17001_norm,ng/g fat
+BDE4701_norm,ng/g fat
+kotiniini01_norm,ng/g fat
+PeCB80_norm,ng/g fat
+HCB80_norm,ng/g fat
+alfa_HCH80_norm,ng/g fat
+beta_HCH80_norm,ng/g fat
+gamma_HCH80_norm,ng/g fat
+Trans_nonakloori80_norm,ng/g fat
+pp_DDT80_norm,ng/g fat
+pp_DDE80_norm,ng/g fat
+PCB7480_norm,ng/g fat
+PCB9980_norm,ng/g fat
+PCB11880_norm,ng/g fat
+PCB15380_norm,ng/g fat
+PCB13880_norm,ng/g fat
+PCB15680_norm,ng/g fat
+PCB18780_norm,ng/g fat
+PCB18380_norm,ng/g fat
+PCB18080_norm,ng/g fat
+PCB17080_norm,ng/g fat
+kotiniini80_norm,ng/g fat
