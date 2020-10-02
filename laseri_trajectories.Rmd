@@ -1,12 +1,13 @@
 ---
 title: "LASERI-trajectories"
 author: "Jouni Tuomisto"
-date: '2020-09-30'
+date: '2020-10-02'
 output:
   word_document: default
   html_document: default
 params:
   N: 500
+  c: 1900
   adjusted_theme_thl: yes
   run_bayes: yes
   run_preprocess: no
@@ -30,50 +31,141 @@ df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-a
 
 units <- read.csv("POP_units.csv")
 
+tmp <- df[grepl("_norm",colnames(df))][-2] # remove alfa_HCH01_norm, which contains no data
+pairs.panels(tmp[1:8])
+pairs.panels(tmp[8:15])
+pairs.panels(tmp[15:22])
+pairs.panels(tmp[22:29])
+pairs.panels(tmp[29:36])
+
+# Compare 1980 and 2001 in pairwise correlations
+tmp <- tmp[sort(colnames(tmp))]
+pairs.panels(tmp[1:8])
+pairs.panels(tmp[8:15])
+pairs.panels(tmp[15:22])
+pairs.panels(tmp[22:29])
+pairs.panels(tmp[29:36])
+
+#colnames(tmp)
+# [1] "HCB01_norm"              "beta_HCH01_norm"         "Trans_nonakloori01_norm"
+# [4] "pp_DDT01_norm"           "pp_DDE01_norm"           "PCB7401_norm"           
+# [7] "PCB9901_norm"            "PCB11801_norm"           "PCB15301_norm"          
+#[10] "PCB13801_norm"           "PCB15601_norm"           "PCB18701_norm"          
+#[13] "PCB18301_norm"           "PCB18001_norm"           "PCB17001_norm"          
+#[16] "BDE4701_norm"            "kotiniini01_norm"        "PeCB80_norm"            
+#[19] "HCB80_norm"              "alfa_HCH80_norm"         "beta_HCH80_norm"        
+#[22] "gamma_HCH80_norm"        "Trans_nonakloori80_norm" "pp_DDT80_norm"          
+#[25] "pp_DDE80_norm"           "PCB7480_norm"            "PCB9980_norm"           
+#[28] "PCB11880_norm"           "PCB15380_norm"           "PCB13880_norm"          
+#[31] "PCB15680_norm"           "PCB18780_norm"           "PCB18380_norm"          
+#[34] "PCB18080_norm"           "PCB17080_norm"           "kotiniini80_norm"       
+
+POP <- c(
+  "HCB", # https://en.wikipedia.org/wiki/Hexachlorobenzene
+  "alfa_HCH", # https://en.wikipedia.org/wiki/Alpha-Hexachlorocyclohexane
+  "beta_HCH",
+  "gamma_HCH", # also known as lindane
+  "Trans_nonakloori", # https://en.wikipedia.org/wiki/Chlordane
+  "pp_DDT", # para,para'-DDT https://en.wikipedia.org/wiki/DDT
+  "pp_DDE", 
+  "PCB74", # https://en.wikipedia.org/wiki/Polychlorinated_biphenyl
+  "PCB99",
+  "PCB118",
+  "PCB153",
+  "PCB138",
+  "PCB156",
+  "PCB187",
+  "PCB183",
+  "PCB180",
+  "PCB170",
+  "BDE47", # https://en.wikipedia.org/wiki/Pentabromodiphenyl_ether
+  "kotiniini80_norm" # https://en.wikipedia.org/wiki/Cotinine
+)
+
 # Take all-male panel of interesting variables
-df <- df[df$SP=="Poika", c("PCB15380_norm","PCB15301_norm","SYNTVUOSI", "BMI80","BMI01","Paino01")] # ,"bodyfat80","bodyfat92"
-df <- na.omit(df)
-# FAKE DATA FOR MODEL CHECKING
-#df <- data.frame(SYNTVUOSI=1962:1966,BMI80=24,BMI01=26,Paino01=c(90,80,70,60,50))
-pairs.panels(df)
+df <- df[df$SP=="Poika", c(
+  "PCB15380_norm", # PCB 153 ug/kg fat in 1980
+  "PCB15301_norm", # PCB 153 ug/kg fat in 2001
+  "SYNTVUOSI", # birth year
+  "BMI80", # body mass index in 1980
+  "BMI83", # body mass index in 1983
+  "BMI86", # body mass index in 1986
+  "BMI01", # body mass index in 2001
+  "Paino01", # body weight kg in 2001
+  "bodyfat80", # body fat % in 1980
+  "bodyfat83", # body fat % in 1983
+  "bodyfat86", # body fat % in 1986
+  "rasva80", # serum fat content mg/ml in 1980
+  "rasva01", # serum fat content mg/ml in 2001
+  "lihatv80", # consumption of meat and meat products g/d in 1980
+  "KALAV80", # consumption of fish and fish products g/d in 1980
+  "FISHTOT_FFQ07", # total fish consumption, g/d in 2007 food frequency questionnaire
+  "pai01k", # physical activity index in 2001
+  "ADIPO01", # adiponectin hormone in serum, ug/ml in 2001
+  "leptin01" # leptin hormone concentration ng/ml in 2001
+)] # Very few observations in bodyfat92, Paino80, leptin80 --> omit
+# It would be good to obtain these variables:
+# ENERC07 energy consumption kJ/d from 2007 FFQ
+# FAT07 fat consumption g/d from 2007 FFQ
+
+pairs.panels(df[1:7])
+pairs.panels(df[7:13])
+pairs.panels(df[13:19])
+
+### Select the population for analysis
+
+dfs <- na.omit(df[c(1:4,7:8)])
 
 ## Indices used
 
 AGE <- 0:40
 H <- length(AGE)
 YEAR <- 1960:2020
-INDIVIDUAL <- 1:nrow(df)
-I <- length(INDIVIDUAL)
-SYNT <- df$SYNTVUOSI[1:I]
+I <- nrow(dfs)
+SYNT <- dfs$SYNTVUOSI
+
+## Data used
+
 U <- 365 # unit conversion factor: 1/d --> 1/a
 A <- 0.9 # fraction, absorption fraction
-k <- 0.22 # 1/a, elimination constant of the POP
-a <- 1.6 # ug/kg/d, average intake at the peak exposure
-N <- 100
+N <- params$N
 b <- 0.07 # 1/a, rate of decrease of the POP in the environment and intake
-c <- 1900 # year of peak exposure
-P <- rep(1,length(AGE)) # age-specific intake relative to lifetime average
+c <- params$c # year of peak exposure
+P <- rep(1,H) # age-specific intake relative to lifetime average
+# Estimated from the Bayesian model:
+## k <- 0.35 # 1/a, elimination constant of the POP
+## a <- 1.1 # ug/kg/d, average intake at the peak exposure
+
+conc <- dfs[1:I,c("PCB15380_norm","PCB15301_norm")]
 
 # https://www.kasvuseula.fi/
 W <- t(matrix(rep(c(5,10,13,15,17,20,22,26,28,31,35,38,44,48,55,60,65,68,70,71,72,
-                    rep(75,10),rep(80,10)),length(INDIVIDUAL)),
-              nrow=length(AGE), dimnames=list(Age=AGE, Individual = INDIVIDUAL)))
+                    rep(75,10),rep(80,10)),I),
+              nrow=H, dimnames=list(Age=AGE, Individual = 1:I)))
 
 # A simplistic model uses the population average as default until the weight reaches the
 # observed value of that individual. Then, actual value is used to replace 80 kg (the max default),
 # if larger. This leads to situation where people suddenly gain weight when at 31 or at 2001.
-W <- pmin(W, df$Paino01, na.rm = TRUE)
-W <- ifelse(W==80, pmax(W, df$Paino01, na.rm=TRUE), W)
-tmp <- df$SYNTVUOSI + matrix(rep(AGE,each=length(INDIVIDUAL)),nrow=length(INDIVIDUAL))>=2001
-W <- ifelse(!is.na(df$Paino01) & tmp, df$Paino01, W)
+W <- pmin(W, dfs$Paino01, na.rm = TRUE)
+W <- ifelse(W==80, pmax(W, dfs$Paino01, na.rm=TRUE), W)
+tmp <- dfs$SYNTVUOSI + matrix(rep(AGE,each=I),nrow=I)>=2001
+W <- ifelse(!is.na(dfs$Paino01) & tmp, dfs$Paino01, W)
 
 # A simplistic model that assumes that average BMI is equal to lifetime fat percentage.
-M <- W * ifelse(is.na(df$BMI01), df$BMI80, (df$BMI80 + df$BMI01)/2) / 100
+M <- W * ifelse(is.na(dfs$BMI01), dfs$BMI80, (dfs$BMI80 + dfs$BMI01)/2) / 100
 
 #aggregate(df$Paino01, by=df[c("Age80")], FUN=function(x) mean(x, na.rm=TRUE))
 
 ```
+The following conclusions can be made from the graphs above
 
+* 1. PCBs correlate very well with each other.
+* 2. PCB correlation is much stronger between congeners at the same year  (R>0.8) than the same congener 21 years apart (R = 0.2 - 0.4).
+* 3. DDT and DDE congeners correlate moderately with each other and across years (R ca. 0.4)
+* 4. Trans-nonachlor correlates well with DDE of the same year (R 0.45-0.6) and moderately across years (R ).
+* 5. HCH congeners correlate only with alpha-HCH in 1980 (R 0.3 - 0.5) but not across years nor beta vs gamma.
+* 6. HCB correlates well with alpha-HCH in 1980 but poorly across other congeners or years.
+* 7. Cotinine correlates poorly across years (R = 0.2) and not at all with POPs.
 
 ```{r deterministic}
 library(ggplot2)
@@ -86,13 +178,16 @@ ggplot()+
 
 df$id <- 1:nrow(df)
 df$Paino80 <- NA
-long <- reshape(df,
+df$bodyfat01 <- NA
+long <- reshape(df[-c(5,6,10:19)],
                 idvar=c("SYNTVUOSI","id"),
                 varying=list(
                   PCB=c("PCB15380_norm","PCB15301_norm"),
                   BMI= c("BMI80","BMI01"),
-                  weight=c("Paino80","Paino01")),
-                v.names =c("PCB","BMI","weight"),
+                  weight=c("Paino80","Paino01"),
+                  fat=c("bodyfat80","bodyfat01")
+                ),
+                v.names =c("PCB","BMI","weight","fat"),
                 timevar="year",
                 times=c(1980,2001),
                 direction="long")
@@ -100,16 +195,16 @@ long <- reshape(df,
 ggplot(long, aes(x=year, y=PCB, colour=SYNTVUOSI, group=id))+geom_line()+
   scale_y_log10()
 
-ggplot(aggregate(long["PCB"], by=long[c("SYNTVUOSI","year")], FUN=mean),
+ggplot(aggregate(long["PCB"], by=long[c("SYNTVUOSI","year")], FUN=function(x) mean(x, na.rm=TRUE)),
        aes(x=year, y=PCB, colour=SYNTVUOSI, group=SYNTVUOSI))+geom_line()
 
 long$age <- long$year - long$SYNTVUOSI
-ggplot(aggregate(long["PCB"], by=long[c("SYNTVUOSI","age")], FUN=mean),
+ggplot(aggregate(long["PCB"], by=long[c("SYNTVUOSI","age")], FUN=function(x) mean(x, na.rm=TRUE)),
        aes(x=age, y=PCB, colour=factor(SYNTVUOSI), group=SYNTVUOSI))+geom_line()
 
 cat("Concentrations in 20-year-old people decrease", signif((1-(40/120)^(1/(1977-1962)))*100,2), " % per year\n")
 
-ggplot(aggregate(long["BMI"], by=long[c("SYNTVUOSI","age")], FUN=mean),
+ggplot(aggregate(long["BMI"], by=long[c("SYNTVUOSI","age")], FUN=function(x) mean(x, na.rm=TRUE)),
        aes(x=age, y=BMI, colour=factor(SYNTVUOSI), group=SYNTVUOSI))+geom_line()
 
 tmp <- aggregate(long["PCB"], by=long[c("age","year")], FUN=mean)
@@ -118,6 +213,20 @@ ggplot(long,
   scale_y_log10()
 
 ```
+```{r regression}
+
+reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80, data=df)
+reg <- step(reg, direction = "both")
+
+summary(reg)
+
+reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80, data=df) 
+reg <- step(reg, direction = "both")
+
+summary(reg)
+
+```
+
 ## Bayesian hierachical model
 
 ```{r bayes}
@@ -133,6 +242,7 @@ ggplot(long,
   library(rjags) # JAGS
   library(MASS) # mvrnorm
   library(car) # scatterplotMatrix
+  library(mcmcr) # as.mcarray
   
   N <- params$N # defined as render parameter
   
@@ -147,8 +257,8 @@ ggplot(long,
     B34[I], B35[I], B36[I], B37[I], B38[I], B39[I], B40[I], B41[I];
     model{
       #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
-      k ~ dnorm(0.1, 0.001)
-      a ~ dnorm(2, 0.001)
+      k ~ dnorm(0.3, 0.1)
+      a ~ dnorm(1, 0.1)
 #      b ~ dnorm(0.1, 0.001)
       tau[1] ~ dgamma(1.0,1.0) 
       tau[2] ~ dgamma(1.0,1.0) 
@@ -261,89 +371,88 @@ ggplot(long,
       c = c,
       P = P[1:H],
       SYNT = SYNT,
-      conc = df[1:I,c("PCB15380_norm","PCB15301_norm")],
+      conc = conc,
       B1 = rep(0,I)
     ),
     n.chains = 4,
-    n.adapt = 100
+    n.adapt = 300
+  )
+  
+  samps.c <- coda.samples(
+    jags, 
+    variable.names=c("k","a","b","tau"), 
+    n.iter=N*10,
+    thin=10
   )
   
   samps.j <- jags.samples(
     jags, 
-    c(
-      'k', 
-      'a',
-      'b',
-      'tau',
-      'E',
-      'pred'
-    ), 
-    thin=1,
-    N*1
+    variable.names=c("k","a","b","tau","E","pred"), 
+    n.iter=N*10,
+    thin=10
   )
 
   #scatterplotMatrix(samps.j$k, main="Elimination constant k")
     
-  cat("Elimination constant k (1/a)\n")  
-  plot(coda.samples(jags, 'k', N))
-  cat("Average exposure during peak year (ug/kg/d)\n")
-  plot(coda.samples(jags, 'a', N))
-  cat("Exposure reduction rate (1/a)\n")
-  plot(coda.samples(jags, 'b', N))
-  cat("Exposure reduction rate (1/a)\n")
-#  plot(coda.samples(jags, 'E', N))
-  cat("Concentration precision\n")
-  plot(coda.samples(jags, 'tau', N))
-  cat("Predicted concentration\n")
-#  plot(coda.samples(jags, 'pred', N))
-  
+  plot(samps.c)
+
 #}
 
 ```
+* k: elimination constant (1/a)
+* a: maximum exposure at the year of peak production (ug/kg/d)
+* b: nominal rate of environmental concentration decrease (1/a)
+* tau: precision for individual concentration estimate at year x (1980 or 2001)
+* E: exposure at a calendar year y (between 1960 and 2020)
+* pred: predicted individual concentration (ug/kg fat)
 
 ```{r results}
 
-  E <- pmax(0,a*b*exp(1)*(YEAR-c+1/b)*exp(-b*(YEAR-c+1/b)))
-  B <- matrix(0, nrow=I, ncol=H)
-  for(age in 2:H) {
-      B[,age] <-  B[,age-1] * (1 - k) + U * A * W[,age-1] * E[SYNT-1963+age] * P[age]
-  }
-  C <- B / M
-  
-  ggplot(data.frame(year=YEAR,exposure=E), aes(x=year, y=E))+geom_line()+
-    labs(title="Exposure level by time",
-         y="Exposure (ug/kg/d)")
-  
-  dat <- melt(B)#[seq(1,550, 10),])
-  dat <- merge(dat, cbind(Var1= 1:I, SYNT=SYNT))
-  
-  ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
-    labs(title="Body burdens in individuals",
-         y="Total body burden (ug)")
+k <- mean(samps.j$k)
+a <- mean(samps.j$a)
+b <- mean(samps.j$b)
 
-  ggplot(aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
-         aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+geom_line()+
-    labs(title="Body burden average by age group",
-         y="Total body burden (ug)")
-  
-  dat <- melt(C)#[seq(1,550, 10),])
-  dat <- merge(dat, cbind(Var1= 1:I, SYNT=SYNT))
-  
-  ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
-    labs(title="Concentrations in individuals",
-         y="Concentration (ug/kg fat)")
+E <- pmax(0,a*b*exp(1)*(YEAR-c+1/b)*exp(-b*(YEAR-c+1/b)))
+B <- matrix(0, nrow=I, ncol=H)
+for(age in 2:H) {
+    B[,age] <-  B[,age-1] * (1 - k) + U * A * W[,age-1] * E[SYNT-1963+age] * P[age]
+}
+C <- B / M
 
-  ggplot()+
-    geom_line(data=aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
-         aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+
-    geom_point(data=aggregate(long["PCB"],by=long[c("SYNTVUOSI","age")],FUN=mean),
-               aes(x=age, y=PCB,colour=factor(SYNTVUOSI)))+geom_point()+
-    labs(title="Concentration average by age group",
-         y="Concentration (ug/kg fat")
-  
+ggplot(data.frame(year=YEAR,exposure=E), aes(x=year, y=E))+geom_line()+
+  labs(title="Exposure level by time",
+       y="Exposure (ug/kg/d)")
+
+dat <- melt(B)#[seq(1,550, 10),])
+dat <- merge(dat, cbind(Var1= 1:I, SYNT=SYNT))
+
+ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
+  labs(title="Body burdens in individuals",
+       y="Total body burden (ug)")
+
+ggplot(aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
+       aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+geom_line()+
+  labs(title="Body burden average by age group",
+       y="Total body burden (ug)")
+
+dat <- melt(C)#[seq(1,550, 10),])
+dat <- merge(dat, cbind(Var1= 1:I, SYNT=SYNT))
+
+ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
+  labs(title="Concentrations in individuals",
+       y="Concentration (ug/kg fat)")
+
+ggplot()+
+  geom_line(data=aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
+       aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+
+  geom_point(data=aggregate(long["PCB"],by=long[c("SYNTVUOSI","age")],FUN=mean),
+             aes(x=age, y=PCB,colour=factor(SYNTVUOSI)))+geom_point()+
+  labs(title="Concentration average by age group",
+       y="Concentration (ug/kg fat")
+
 tst <- rowMeans(samps.j$pred[,,,], dims=2)
 tst <- data.frame(PCB15380_pred = tst[,1],PCB15301_pred = tst[,2],
-                  df[c("PCB15380_norm","PCB15301_norm")])
+                  dfs[c("PCB15380_norm","PCB15301_norm")])
 pairs.panels(tst)
 
 ```
