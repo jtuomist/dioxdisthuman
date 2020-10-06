@@ -1,7 +1,7 @@
 ---
 title: "LASERI-trajectories"
 author: "Jouni Tuomisto"
-date: '2020-10-02'
+date: '2020-10-06'
 output:
   word_document: default
   html_document: default
@@ -114,7 +114,7 @@ pairs.panels(df[13:19])
 
 ### Select the population for analysis
 
-dfs <- na.omit(df[c(1:4,7:8)])
+dfs <- na.omit(df[c(1:4,7:8,16)])
 
 ## Indices used
 
@@ -137,6 +137,7 @@ P <- rep(1,H) # age-specific intake relative to lifetime average
 ## a <- 1.1 # ug/kg/d, average intake at the peak exposure
 
 conc <- dfs[1:I,c("PCB15380_norm","PCB15301_norm")]
+fish <- dfs$FISHTOT_FFQ07[1:I]
 
 # https://www.kasvuseula.fi/
 W <- t(matrix(rep(c(5,10,13,15,17,20,22,26,28,31,35,38,44,48,55,60,65,68,70,71,72,
@@ -215,17 +216,27 @@ ggplot(long,
 ```
 ```{r regression}
 
+# Remove the least important variables from the model
+#reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80 + lihatv80, data=df)
+#reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80, data=df)
 reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80, data=df)
-reg <- step(reg, direction = "both")
-
 summary(reg)
 
-reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80, data=df) 
+#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + KALAV80 + lihatv80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + KALAV80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + FISHTOT_FFQ07, data=df) 
+reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + PCB15380_norm + FISHTOT_FFQ07, data=df) 
 reg <- step(reg, direction = "both")
-
 summary(reg)
 
 ```
+
+For PCB15380, we can see that
+
+1. KALAV80 and lihatv80 bring little if any predictive power to the regression model
+2. FISHTOT_FFQ07 seems to have some predictive power
+
 
 ## Bayesian hierachical model
 
@@ -250,7 +261,7 @@ summary(reg)
   
   mod <- textConnection(
     "
-    var k, a, b, U, E[61], C[I,H], B[I,H], M[I,H], C1, C2, conc[I,2], SYNT[I],
+    var k, a, b, U, E[61], C[I,H], B[I,H], M[I,H], C1, C2, conc[I,2], SYNT[I], Efish[I],
     B1[I], B2[I], B3[I], B4[I], B5[I], B6[I], B7[I], B8[I], B9[I], B10[I], B11[I],
     B12[I], B13[I], B14[I], B15[I], B16[I], B17[I], B18[I], B19[I], B20[I], B21[I], B22[I],
     B23[I], B24[I], B25[I], B26[I], B27[I], B28[I], B29[I], B30[I], B31[I], B32[I], B33[I],
@@ -262,49 +273,52 @@ summary(reg)
 #      b ~ dnorm(0.1, 0.001)
       tau[1] ~ dgamma(1.0,1.0) 
       tau[2] ~ dgamma(1.0,1.0) 
+#      bfish ~ dnorm(1.0,0.001) 
+      bfish <- 0
+      Efish[] <- fish[] * bfish
       for(year in YEAR) {
         E[year-1959] <- max(0,a*b*exp(1)*(year-c+1/b)*exp(-b*(year-c+1/b)))
       }
-      B2[] <-  B1[] * (1 - k) + U * A * W[,1] * E[SYNT[]-1960+1] * P[1]
-      B3[] <-  B2[] * (1 - k) + U * A * W[,2] * E[SYNT[]-1960+2] * P[2]
-      B4[] <-  B3[] * (1 - k) + U * A * W[,3] * E[SYNT[]-1960+3] * P[3]
-      B5[] <-  B4[] * (1 - k) + U * A * W[,4] * E[SYNT[]-1960+4] * P[4]
-      B6[] <-  B5[] * (1 - k) + U * A * W[,5] * E[SYNT[]-1960+5] * P[5]
-      B7[] <-  B6[] * (1 - k) + U * A * W[,6] * E[SYNT[]-1960+6] * P[6]
-      B8[] <-  B7[] * (1 - k) + U * A * W[,7] * E[SYNT[]-1960+7] * P[7]
-      B9[] <-  B8[] * (1 - k) + U * A * W[,8] * E[SYNT[]-1960+8] * P[8]
-      B10[] <-  B9[] * (1 - k) + U * A * W[,9] * E[SYNT[]-1960+9] * P[9]
-      B11[] <-  B10[] * (1 - k) + U * A * W[,10] * E[SYNT[]-1960+10] * P[10]
-      B12[] <-  B11[] * (1 - k) + U * A * W[,11] * E[SYNT[]-1960+11] * P[11]
-      B13[] <-  B12[] * (1 - k) + U * A * W[,12] * E[SYNT[]-1960+12] * P[12]
-      B14[] <-  B13[] * (1 - k) + U * A * W[,13] * E[SYNT[]-1960+13] * P[13]
-      B15[] <-  B14[] * (1 - k) + U * A * W[,14] * E[SYNT[]-1960+14] * P[14]
-      B16[] <-  B15[] * (1 - k) + U * A * W[,15] * E[SYNT[]-1960+15] * P[15]
-      B17[] <-  B16[] * (1 - k) + U * A * W[,16] * E[SYNT[]-1960+16] * P[16]
-      B18[] <-  B17[] * (1 - k) + U * A * W[,17] * E[SYNT[]-1960+17] * P[17]
-      B19[] <-  B18[] * (1 - k) + U * A * W[,18] * E[SYNT[]-1960+18] * P[18]
-      B20[] <-  B19[] * (1 - k) + U * A * W[,19] * E[SYNT[]-1960+19] * P[19]
-      B21[] <-  B20[] * (1 - k) + U * A * W[,20] * E[SYNT[]-1960+20] * P[20]
-      B22[] <-  B21[] * (1 - k) + U * A * W[,21] * E[SYNT[]-1960+21] * P[21]
-      B23[] <-  B22[] * (1 - k) + U * A * W[,22] * E[SYNT[]-1960+22] * P[22]
-      B24[] <-  B23[] * (1 - k) + U * A * W[,23] * E[SYNT[]-1960+23] * P[23]
-      B25[] <-  B24[] * (1 - k) + U * A * W[,24] * E[SYNT[]-1960+24] * P[24]
-      B26[] <-  B25[] * (1 - k) + U * A * W[,25] * E[SYNT[]-1960+25] * P[25]
-      B27[] <-  B26[] * (1 - k) + U * A * W[,26] * E[SYNT[]-1960+26] * P[26]
-      B28[] <-  B27[] * (1 - k) + U * A * W[,27] * E[SYNT[]-1960+27] * P[27]
-      B29[] <-  B28[] * (1 - k) + U * A * W[,28] * E[SYNT[]-1960+28] * P[28]
-      B30[] <-  B29[] * (1 - k) + U * A * W[,29] * E[SYNT[]-1960+29] * P[29]
-      B31[] <-  B30[] * (1 - k) + U * A * W[,30] * E[SYNT[]-1960+30] * P[30]
-      B32[] <-  B31[] * (1 - k) + U * A * W[,31] * E[SYNT[]-1960+31] * P[31]
-      B33[] <-  B32[] * (1 - k) + U * A * W[,32] * E[SYNT[]-1960+32] * P[32]
-      B34[] <-  B33[] * (1 - k) + U * A * W[,33] * E[SYNT[]-1960+33] * P[33]
-      B35[] <-  B34[] * (1 - k) + U * A * W[,34] * E[SYNT[]-1960+34] * P[34]
-      B36[] <-  B35[] * (1 - k) + U * A * W[,35] * E[SYNT[]-1960+35] * P[35]
-      B37[] <-  B36[] * (1 - k) + U * A * W[,36] * E[SYNT[]-1960+36] * P[36]
-      B38[] <-  B37[] * (1 - k) + U * A * W[,37] * E[SYNT[]-1960+37] * P[37]
-      B39[] <-  B38[] * (1 - k) + U * A * W[,38] * E[SYNT[]-1960+38] * P[38]
-      B40[] <-  B39[] * (1 - k) + U * A * W[,39] * E[SYNT[]-1960+39] * P[39]
-      B41[] <-  B40[] * (1 - k) + U * A * W[,40] * E[SYNT[]-1960+40] * P[40]
+      B2[] <-  B1[] * (1 - k) + U * A * W[,1] * (E[SYNT[]-1960+1] + Efish[]) * P[1]
+      B3[] <-  B2[] * (1 - k) + U * A * W[,2] * (E[SYNT[]-1960+2] + Efish[]) * P[2]
+      B4[] <-  B3[] * (1 - k) + U * A * W[,3] * (E[SYNT[]-1960+3] + Efish[]) * P[3]
+      B5[] <-  B4[] * (1 - k) + U * A * W[,4] * (E[SYNT[]-1960+4] + Efish[]) * P[4]
+      B6[] <-  B5[] * (1 - k) + U * A * W[,5] * (E[SYNT[]-1960+5] + Efish[]) * P[5]
+      B7[] <-  B6[] * (1 - k) + U * A * W[,6] * (E[SYNT[]-1960+6] + Efish[]) * P[6]
+      B8[] <-  B7[] * (1 - k) + U * A * W[,7] * (E[SYNT[]-1960+7] + Efish[]) * P[7]
+      B9[] <-  B8[] * (1 - k) + U * A * W[,8] * (E[SYNT[]-1960+8] + Efish[]) * P[8]
+      B10[] <-  B9[] * (1 - k) + U * A * W[,9] * (E[SYNT[]-1960+9] + Efish[]) * P[9]
+      B11[] <-  B10[] * (1 - k) + U * A * W[,10] * (E[SYNT[]-1960+10] + Efish[]) * P[10]
+      B12[] <-  B11[] * (1 - k) + U * A * W[,11] * (E[SYNT[]-1960+11] + Efish[]) * P[11]
+      B13[] <-  B12[] * (1 - k) + U * A * W[,12] * (E[SYNT[]-1960+12] + Efish[]) * P[12]
+      B14[] <-  B13[] * (1 - k) + U * A * W[,13] * (E[SYNT[]-1960+13] + Efish[]) * P[13]
+      B15[] <-  B14[] * (1 - k) + U * A * W[,14] * (E[SYNT[]-1960+14] + Efish[]) * P[14]
+      B16[] <-  B15[] * (1 - k) + U * A * W[,15] * (E[SYNT[]-1960+15] + Efish[]) * P[15]
+      B17[] <-  B16[] * (1 - k) + U * A * W[,16] * (E[SYNT[]-1960+16] + Efish[]) * P[16]
+      B18[] <-  B17[] * (1 - k) + U * A * W[,17] * (E[SYNT[]-1960+17] + Efish[]) * P[17]
+      B19[] <-  B18[] * (1 - k) + U * A * W[,18] * (E[SYNT[]-1960+18] + Efish[]) * P[18]
+      B20[] <-  B19[] * (1 - k) + U * A * W[,19] * (E[SYNT[]-1960+19] + Efish[]) * P[19]
+      B21[] <-  B20[] * (1 - k) + U * A * W[,20] * (E[SYNT[]-1960+20] + Efish[]) * P[20]
+      B22[] <-  B21[] * (1 - k) + U * A * W[,21] * (E[SYNT[]-1960+21] + Efish[]) * P[21]
+      B23[] <-  B22[] * (1 - k) + U * A * W[,22] * (E[SYNT[]-1960+22] + Efish[]) * P[22]
+      B24[] <-  B23[] * (1 - k) + U * A * W[,23] * (E[SYNT[]-1960+23] + Efish[]) * P[23]
+      B25[] <-  B24[] * (1 - k) + U * A * W[,24] * (E[SYNT[]-1960+24] + Efish[]) * P[24]
+      B26[] <-  B25[] * (1 - k) + U * A * W[,25] * (E[SYNT[]-1960+25] + Efish[]) * P[25]
+      B27[] <-  B26[] * (1 - k) + U * A * W[,26] * (E[SYNT[]-1960+26] + Efish[]) * P[26]
+      B28[] <-  B27[] * (1 - k) + U * A * W[,27] * (E[SYNT[]-1960+27] + Efish[]) * P[27]
+      B29[] <-  B28[] * (1 - k) + U * A * W[,28] * (E[SYNT[]-1960+28] + Efish[]) * P[28]
+      B30[] <-  B29[] * (1 - k) + U * A * W[,29] * (E[SYNT[]-1960+29] + Efish[]) * P[29]
+      B31[] <-  B30[] * (1 - k) + U * A * W[,30] * (E[SYNT[]-1960+30] + Efish[]) * P[30]
+      B32[] <-  B31[] * (1 - k) + U * A * W[,31] * (E[SYNT[]-1960+31] + Efish[]) * P[31]
+      B33[] <-  B32[] * (1 - k) + U * A * W[,32] * (E[SYNT[]-1960+32] + Efish[]) * P[32]
+      B34[] <-  B33[] * (1 - k) + U * A * W[,33] * (E[SYNT[]-1960+33] + Efish[]) * P[33]
+      B35[] <-  B34[] * (1 - k) + U * A * W[,34] * (E[SYNT[]-1960+34] + Efish[]) * P[34]
+      B36[] <-  B35[] * (1 - k) + U * A * W[,35] * (E[SYNT[]-1960+35] + Efish[]) * P[35]
+      B37[] <-  B36[] * (1 - k) + U * A * W[,36] * (E[SYNT[]-1960+36] + Efish[]) * P[36]
+      B38[] <-  B37[] * (1 - k) + U * A * W[,37] * (E[SYNT[]-1960+37] + Efish[]) * P[37]
+      B39[] <-  B38[] * (1 - k) + U * A * W[,38] * (E[SYNT[]-1960+38] + Efish[]) * P[38]
+      B40[] <-  B39[] * (1 - k) + U * A * W[,39] * (E[SYNT[]-1960+39] + Efish[]) * P[39]
+      B41[] <-  B40[] * (1 - k) + U * A * W[,40] * (E[SYNT[]-1960+40] + Efish[]) * P[40]
       
       C[,1] <- B1 / M[,1]
       C[,2] <- B2 / M[,2]
@@ -372,6 +386,7 @@ summary(reg)
       P = P[1:H],
       SYNT = SYNT,
       conc = conc,
+      fish = fish,
       B1 = rep(0,I)
     ),
     n.chains = 4,
@@ -380,14 +395,14 @@ summary(reg)
   
   samps.c <- coda.samples(
     jags, 
-    variable.names=c("k","a","b","tau"), 
+    variable.names=c("k","a","b","tau","bfish"), 
     n.iter=N*10,
     thin=10
   )
   
   samps.j <- jags.samples(
     jags, 
-    variable.names=c("k","a","b","tau","E","pred"), 
+    variable.names=c("k","a","b","tau","E","pred","bfish"), 
     n.iter=N*10,
     thin=10
   )
@@ -430,7 +445,7 @@ ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
   labs(title="Body burdens in individuals",
        y="Total body burden (ug)")
 
-ggplot(aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
+ggplot(aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=function(x) mean(x, na.rm=TRUE)), 
        aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+geom_line()+
   labs(title="Body burden average by age group",
        y="Total body burden (ug)")
@@ -443,9 +458,9 @@ ggplot(dat, aes(x=Var2, y=value, colour=SYNT, group=Var1))+geom_line()+
        y="Concentration (ug/kg fat)")
 
 ggplot()+
-  geom_line(data=aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=mean), 
+  geom_line(data=aggregate(dat["value"], by=dat[c("Var2","SYNT")], FUN=function(x) mean(x, na.rm=TRUE)), 
        aes(x=Var2, y=value, colour=factor(SYNT), group=SYNT))+
-  geom_point(data=aggregate(long["PCB"],by=long[c("SYNTVUOSI","age")],FUN=mean),
+  geom_point(data=aggregate(long["PCB"],by=long[c("SYNTVUOSI","age")],FUN=function(x) mean(x, na.rm=TRUE)),
              aes(x=age, y=PCB,colour=factor(SYNTVUOSI)))+geom_point()+
   labs(title="Concentration average by age group",
        y="Concentration (ug/kg fat")
