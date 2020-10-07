@@ -1,7 +1,7 @@
 ---
 title: "LASERI-trajectories"
 author: "Jouni Tuomisto"
-date: '2020-10-06'
+date: '2020-10-07'
 output:
   word_document: default
   html_document: default
@@ -21,6 +21,27 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This analysis produces a model for trajectories of human body burdens of persistent organic pollutants (POPs).
 
+### Muistiinpanoja kokouksesta 2020-10-07
+
+Rasvamassa on tärkeämpi kuin BMI, koska niitä on useammalta vuodelta lapsen kasvaessa (80, 83, 86). Lisäksi nimenomaan rasva vaikuttaa POPien kinetiikkaan (ja POPit rasva-aineenvaihduntaan?).
+
+Rasvan määrää on arvioitu usealla eri kaavalla rasvapoimuista. Panu ja Noora tarkastavat parhaan laskentatavan. Myös vyötärönympäryksen ja leptiinipitoisuuden saaminen kaavaan tutkitaan.
+
+Ritter on hyvä teoreettinen malli POP-kinetiikasta. Lisäksi ruotsalaisilla on jokin deskriptiivinen malli (mikä?).
+
+Panu ja Noora kaivavat myös alkuperäiset pituus- ja painomittaukset 80, 83, 86. Näiden perusteella voisi suunnitella oman mallin, jolla kuvataan yksilöiden pituuden, painon ja rasvamäärän muutosta ajassa. Tähän voisi hyödyntää myös kasvukäyrien arvoja priorina. Pitääkö kehittää oma bayes-malli?
+
+Hypoteesia pitäisi täsmentää. Tällä hetkellä ilmassa on useita, mutta mikä on se olennainen?
+
+* Onko POP-pitoisuuksilla yhteyttä sairauksiin (kun vakioidaan rasvan suhteen)?
+* Selittääkö POPien yleistyminen obesiteettia? (Tätä on kyllä todella vaikea testata, koska meillä ei ole dataa energiansaannista ja liikunnan määrästä)
+* Mitkä ovat POP-pitoisuuden determinantit? (Tämä ei ole ensisijainen kysymys.)
+* Miten huomioidaan ruumiin koko, joka on olennainen determinantti sairauksien synnyssä?
+* Kemikaalikoktailien tutkiminen on olennainen osa alkuperäistä tutkimussuunnitelmaa. (Miten tarkalleen ottaen?)
+* Onko vierasainemetabolia sekoittava tekijä? Joistakin POPeista metabolia tunnetaan aika hyvin. Lisäksi on SNIP-määrityksiä, joista voidaan tehdä genotyyppausta CYP-entsyymien suhteen. Pitäisi kehittää jokin hypoteesi jota tutkitaan. Panulla on tästä jo jokin raportti.
+
+## Data preprocessing and preliminary analyses
+
 ```{r data}
 library(foreign)
 library(psych)
@@ -31,14 +52,10 @@ df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-a
 
 units <- read.csv("POP_units.csv")
 
-tmp <- df[grepl("_norm",colnames(df))][-2] # remove alfa_HCH01_norm, which contains no data
-pairs.panels(tmp[1:8])
-pairs.panels(tmp[8:15])
-pairs.panels(tmp[15:22])
-pairs.panels(tmp[22:29])
-pairs.panels(tmp[29:36])
-
-# Compare 1980 and 2001 in pairwise correlations
+# Get normalised (per fat?) concentrations
+tmp <- df[grepl("_norm",colnames(df))][-2] # remove alfa_HCH01, which contains no data
+colnames(tmp) <- gsub("_norm","",colnames(tmp))
+# Compare 1980 (80) and 2001 (01) in pairwise correlations
 tmp <- tmp[sort(colnames(tmp))]
 pairs.panels(tmp[1:8])
 pairs.panels(tmp[8:15])
@@ -47,18 +64,18 @@ pairs.panels(tmp[22:29])
 pairs.panels(tmp[29:36])
 
 #colnames(tmp)
-# [1] "HCB01_norm"              "beta_HCH01_norm"         "Trans_nonakloori01_norm"
-# [4] "pp_DDT01_norm"           "pp_DDE01_norm"           "PCB7401_norm"           
-# [7] "PCB9901_norm"            "PCB11801_norm"           "PCB15301_norm"          
-#[10] "PCB13801_norm"           "PCB15601_norm"           "PCB18701_norm"          
-#[13] "PCB18301_norm"           "PCB18001_norm"           "PCB17001_norm"          
-#[16] "BDE4701_norm"            "kotiniini01_norm"        "PeCB80_norm"            
-#[19] "HCB80_norm"              "alfa_HCH80_norm"         "beta_HCH80_norm"        
-#[22] "gamma_HCH80_norm"        "Trans_nonakloori80_norm" "pp_DDT80_norm"          
-#[25] "pp_DDE80_norm"           "PCB7480_norm"            "PCB9980_norm"           
-#[28] "PCB11880_norm"           "PCB15380_norm"           "PCB13880_norm"          
-#[31] "PCB15680_norm"           "PCB18780_norm"           "PCB18380_norm"          
-#[34] "PCB18080_norm"           "PCB17080_norm"           "kotiniini80_norm"       
+# [1] "HCB01"              "beta_HCH01"         "Trans_nonakloori01"
+# [4] "pp_DDT01"           "pp_DDE01"           "PCB7401"           
+# [7] "PCB9901"            "PCB11801"           "PCB15301"          
+#[10] "PCB13801"           "PCB15601"           "PCB18701"          
+#[13] "PCB18301"           "PCB18001"           "PCB17001"          
+#[16] "BDE4701"            "kotiniini01"        "PeCB80"            
+#[19] "HCB80"              "alfa_HCH80"         "beta_HCH80"        
+#[22] "gamma_HCH80"        "Trans_nonakloori80" "pp_DDT80"          
+#[25] "pp_DDE80"           "PCB7480"            "PCB9980"           
+#[28] "PCB11880"           "PCB15380"           "PCB13880"          
+#[31] "PCB15680"           "PCB18780"           "PCB18380"          
+#[34] "PCB18080"           "PCB17080"           "kotiniini80"       
 
 POP <- c(
   "HCB", # https://en.wikipedia.org/wiki/Hexachlorobenzene
@@ -68,7 +85,7 @@ POP <- c(
   "Trans_nonakloori", # https://en.wikipedia.org/wiki/Chlordane
   "pp_DDT", # para,para'-DDT https://en.wikipedia.org/wiki/DDT
   "pp_DDE", 
-  "PCB74", # https://en.wikipedia.org/wiki/Polychlorinated_biphenyl
+  "PCB74", # ug/kg fat, https://en.wikipedia.org/wiki/Polychlorinated_biphenyl
   "PCB99",
   "PCB118",
   "PCB153",
@@ -79,31 +96,32 @@ POP <- c(
   "PCB180",
   "PCB170",
   "BDE47", # https://en.wikipedia.org/wiki/Pentabromodiphenyl_ether
-  "kotiniini80_norm" # https://en.wikipedia.org/wiki/Cotinine
+  "kotiniini" # https://en.wikipedia.org/wiki/Cotinine
 )
 
 # Take all-male panel of interesting variables
-df <- df[df$SP=="Poika", c(
-  "PCB15380_norm", # PCB 153 ug/kg fat in 1980
-  "PCB15301_norm", # PCB 153 ug/kg fat in 2001
-  "SYNTVUOSI", # birth year
-  "BMI80", # body mass index in 1980
-  "BMI83", # body mass index in 1983
-  "BMI86", # body mass index in 1986
-  "BMI01", # body mass index in 2001
-  "Paino01", # body weight kg in 2001
-  "bodyfat80", # body fat % in 1980
-  "bodyfat83", # body fat % in 1983
-  "bodyfat86", # body fat % in 1986
-  "rasva80", # serum fat content mg/ml in 1980
-  "rasva01", # serum fat content mg/ml in 2001
-  "lihatv80", # consumption of meat and meat products g/d in 1980
-  "KALAV80", # consumption of fish and fish products g/d in 1980
-  "FISHTOT_FFQ07", # total fish consumption, g/d in 2007 food frequency questionnaire
-  "pai01k", # physical activity index in 2001
-  "ADIPO01", # adiponectin hormone in serum, ug/ml in 2001
-  "leptin01" # leptin hormone concentration ng/ml in 2001
-)] # Very few observations in bodyfat92, Paino80, leptin80 --> omit
+df <- cbind(df[c(
+    "SYNTVUOSI", # birth year
+    "BMI80", # body mass index in 1980
+    "BMI83", # body mass index in 1983
+    "BMI86", # body mass index in 1986
+    "BMI01", # body mass index in 2001
+    "Paino01", # body weight kg in 2001
+    "bodyfat80", # body fat % in 1980
+    "bodyfat83", # body fat % in 1983
+    "bodyfat86", # body fat % in 1986
+    "rasva80", # serum fat content mg/ml in 1980
+    "rasva01", # serum fat content mg/ml in 2001
+    "lihatv80", # consumption of meat and meat products g/d in 1980
+    "KALAV80", # consumption of fish and fish products g/d in 1980
+    "FISHTOT_FFQ07", # total fish consumption, g/d in 2007 food frequency questionnaire
+    "pai01k", # physical activity index in 2001
+    "ADIPO01", # adiponectin hormone in serum, ug/ml in 2001
+    "leptin01" # leptin hormone concentration ng/ml in 2001
+  )],
+  tmp
+)[df$SP=="Poika", ]
+# Very few observations in bodyfat92, Paino80, leptin80 --> omit
 # It would be good to obtain these variables:
 # ENERC07 energy consumption kJ/d from 2007 FFQ
 # FAT07 fat consumption g/d from 2007 FFQ
@@ -114,7 +132,7 @@ pairs.panels(df[13:19])
 
 ### Select the population for analysis
 
-dfs <- na.omit(df[c(1:4,7:8,16)])
+dfs <- na.omit(df[c(1:2,5:6,14,31:32)])
 
 ## Indices used
 
@@ -136,7 +154,7 @@ P <- rep(1,H) # age-specific intake relative to lifetime average
 ## k <- 0.35 # 1/a, elimination constant of the POP
 ## a <- 1.1 # ug/kg/d, average intake at the peak exposure
 
-conc <- dfs[1:I,c("PCB15380_norm","PCB15301_norm")]
+conc <- dfs[1:I,c("PCB15380","PCB15301")]
 fish <- dfs$FISHTOT_FFQ07[1:I]
 
 # https://www.kasvuseula.fi/
@@ -168,11 +186,13 @@ The following conclusions can be made from the graphs above
 * 6. HCB correlates well with alpha-HCH in 1980 but poorly across other congeners or years.
 * 7. Cotinine correlates poorly across years (R = 0.2) and not at all with POPs.
 
+## Deterministic data analyses
+
 ```{r deterministic}
 library(ggplot2)
-mimax <- c(min(df[c("PCB15380_norm","PCB15301_norm")]),max(df[c("PCB15380_norm","PCB15301_norm")]))
+mimax <- c(min(df[c("PCB15380","PCB15301")]),max(df[c("PCB15380","PCB15301")]))
 ggplot()+
-  geom_point(data=df, aes(x=PCB15380_norm, y=PCB15301_norm, size=Paino01, colour=SYNTVUOSI))+
+  geom_point(data=df, aes(x=PCB15380, y=PCB15301, size=Paino01, colour=SYNTVUOSI))+
   geom_line(data=data.frame(x=mimax, y=mimax), aes(x=x, y=y),color="red")+
   scale_x_log10()+scale_y_log10()+
   labs(title="Correlation of individuals' PCB measurements 1980 and 2001")
@@ -180,10 +200,10 @@ ggplot()+
 df$id <- 1:nrow(df)
 df$Paino80 <- NA
 df$bodyfat01 <- NA
-long <- reshape(df[-c(5,6,10:19)],
+long <- reshape(df[c("SYNTVUOSI","id","PCB15380","PCB15301","BMI80","BMI01","Paino80","Paino01","bodyfat80","bodyfat01")],
                 idvar=c("SYNTVUOSI","id"),
                 varying=list(
-                  PCB=c("PCB15380_norm","PCB15301_norm"),
+                  PCB=c("PCB15380","PCB15301"),
                   BMI= c("BMI80","BMI01"),
                   weight=c("Paino80","Paino01"),
                   fat=c("bodyfat80","bodyfat01")
@@ -208,27 +228,57 @@ cat("Concentrations in 20-year-old people decrease", signif((1-(40/120)^(1/(1977
 ggplot(aggregate(long["BMI"], by=long[c("SYNTVUOSI","age")], FUN=function(x) mean(x, na.rm=TRUE)),
        aes(x=age, y=BMI, colour=factor(SYNTVUOSI), group=SYNTVUOSI))+geom_line()
 
-tmp <- aggregate(long["PCB"], by=long[c("age","year")], FUN=mean)
-ggplot(long,
-       aes(x=age, y=PCB, colour=BMI, group=id))+geom_line()+
-  scale_y_log10()
-
 ```
+## Linear regressions to analyse impacts of variables
+
 ```{r regression}
 
+
+
 # Remove the least important variables from the model
-#reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80 + lihatv80, data=df)
-#reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80, data=df)
-reg <- lm(PCB15380_norm ~ SYNTVUOSI + BMI80 + bodyfat80, data=df)
+#reg <- lm(PCB15380 ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80 + lihatv80, data=df)
+#reg <- lm(PCB15380 ~ SYNTVUOSI + BMI80 + bodyfat80 + KALAV80, data=df)
+reg <- lm(PCB15380 ~ SYNTVUOSI + BMI80 + bodyfat80, data=df)
 summary(reg)
 
-#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + KALAV80 + lihatv80 + FISHTOT_FFQ07, data=df) 
-#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + KALAV80 + FISHTOT_FFQ07, data=df) 
-#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + bodyfat80 + FISHTOT_FFQ07, data=df) 
-#reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380_norm + FISHTOT_FFQ07, data=df) 
-reg <- lm(PCB15301_norm ~ SYNTVUOSI + BMI80 + BMI01 + PCB15380_norm + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301 ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380 + bodyfat80 + KALAV80 + lihatv80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301 ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380 + bodyfat80 + KALAV80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301 ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380 + bodyfat80 + FISHTOT_FFQ07, data=df) 
+#reg <- lm(PCB15301 ~ SYNTVUOSI + BMI80 + BMI01 + Paino01 + PCB15380 + FISHTOT_FFQ07, data=df) 
+reg <- lm(PCB15301 ~ SYNTVUOSI + BMI80 + BMI01 + PCB15380 + FISHTOT_FFQ07, data=df) 
 reg <- step(reg, direction = "both")
 summary(reg)
+
+det1 <- "SYNTVUOSI + BMI80 + BMI01 + Paino01 + bodyfat80"
+det2 <- " + KALAV80 + lihatv80 + FISHTOT_FFQ07"
+df$alfa_HCH01 <- NA
+df$BDE4780 <- NA
+df$gamma_HCH01 <- NA
+
+out <- data.frame()
+for(j in POP) {
+  for(i in c("80","01")) {
+    for(k in 1:2) {
+      if(!all(is.na(df[[paste0(j,i)]]))) {
+      reg <- lm(as.formula(paste0(j, i," ~ ", c(det1, paste0(det1, det2))[k])), data = df)
+      out <- rbind(out,
+                   cbind(
+                      congener=j,
+                      year=i,
+                      formula = c("short","long")[k],
+                      as.data.frame(summary(reg)[[4]]),
+                      N = summary(reg)[[7]][2]+1,
+                      R2 = summary(reg)[[8]][1]
+                   )
+      )
+  }}}
+}
+
+tmp <- aggregate(out["R2"], by=out[c("congener","year","formula")],FUN=mean)
+tmp <- tmp[order(-tmp$R2),]
+ggplot(tmp, aes(x=congener, y=R2, colour=formula, shape=year))+geom_point(size=2)+
+  coord_flip()+
+  labs(title="Regression fit (R^2) of a pollutant with more or less\n explanatory variables at different years")
 
 ```
 
@@ -238,7 +288,7 @@ For PCB15380, we can see that
 2. FISHTOT_FFQ07 seems to have some predictive power
 
 
-## Bayesian hierachical model
+## Bayesian hierachical model for POP kinetics
 
 ```{r bayes}
 # This was forked from Dioxdistboys_individual_rows.Rmd and
@@ -421,6 +471,8 @@ For PCB15380, we can see that
 * E: exposure at a calendar year y (between 1960 and 2020)
 * pred: predicted individual concentration (ug/kg fat)
 
+## Results from the Bayesian kinetic model
+
 ```{r results}
 
 k <- mean(samps.j$k)
@@ -466,8 +518,15 @@ ggplot()+
        y="Concentration (ug/kg fat")
 
 tst <- rowMeans(samps.j$pred[,,,], dims=2)
-tst <- data.frame(PCB15380_pred = tst[,1],PCB15301_pred = tst[,2],
-                  dfs[c("PCB15380_norm","PCB15301_norm")])
+tst <- data.frame(
+  dfs[c("PCB15380")],
+  PCB15380_pred = tst[,1],
+  dfs[c("PCB15301")],
+  PCB15301_pred = tst[,2]
+)
 pairs.panels(tst)
 
 ```
+In conclusion, the model predicts OK the agegroup averages but does not predict individual variation. The correlation between measured and predicted PCB153 in 2001 are actually negative.
+
+In addition: why do the predicted values form two subpopulations when 1980 and 2001 are scatterplotted?
