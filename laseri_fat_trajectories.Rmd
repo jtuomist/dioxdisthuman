@@ -1,0 +1,128 @@
+---
+title: "Laseri fat trajectories"
+author: "Jouni Tuomisto"
+date: "23 3 2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview and tasks
+
+This project aims to create individual trajectories of fat mass change in individuals in the Laseri study.
+
+### To be done:
+
+1. 
+
+```{r preprocess}
+library(reshape2)
+library(tidyverse)
+
+df <- read.csv("data/priv/rasvapopperus.csv")[-(11:85)] # Remove POP variables
+# Each row is an individual
+dfl <- melt(df, id.vars = c("tutkno80","SP","IKA80"), variable.name = "Parameter", value.name = "Result")
+dfl$year[grepl("80",dfl$Parameter)] <- 1980
+dfl$year[grepl("83",dfl$Parameter)] <- 1983
+dfl$year[grepl("86",dfl$Parameter)] <- 1986
+dfl$year[grepl("92",dfl$Parameter)] <- 1992
+dfl$year[grepl("01",dfl$Parameter)] <- 2001
+dfl$Parameter <- gsub("(80|83|86|92|01)","",dfl$Parameter)  
+dfl$age <- dfl$year - 1980 + dfl$IKA80
+
+ggplot(dfl[dfl$Parameter=="PFDWB",], aes(x=age, y=Result, colour=year, group=tutkno80))+geom_line()+facet_wrap(~SP)
+
+tmp <- dfl[dfl$Parameter=="PFDWB",]
+tmp <- aggregate(tmp["Result"], by = tmp[c("age","SP","year")], FUN=function(x) mean(x, na.rm = TRUE))
+ggplot(tmp, aes(x=age, y=Result, colour=year, group=year))+geom_line()+facet_wrap(~SP)
+
+
+```
+
+## Hierarchical Bayes
+
+
+```{r bayes}
+
+  library(rjags) # JAGS
+  library(MASS) # mvrnorm
+  library(car) # scatterplotMatrix
+  library(mcmcr) # as.mcarray
+  
+  N <- 100 # params$N # defined as render parameter
+  
+  # Hierarchical Bayes model.
+  
+  mod <- textConnection(
+    "
+    var a[2], b[2], c[2], fat[I,4], s[I], age[I];
+    model{
+      a[1] ~ dnorm(0, 0.01)
+      a[2] ~ dnorm(0, 0.01)
+      b[1] ~ dnorm(0, 0.01)
+      b[2] ~ dnorm(0, 0.01)
+      c[1] ~ dnorm(0, 0.01)
+      c[2] ~ dnorm(0, 0.01)
+      tau[1] ~ dgamma(1.0,1.0) 
+      tau[2] ~ dgamma(1.0,1.0) 
+
+      for(i in 1:I) { 
+        for(y in 1:length(YEAR)) {
+          fat[i,y] ~ dnorm(a[s[i]] + b[s[i]]*(YEAR[y]+age[i]) + c[s[i]]*(YEAR[y]+age[i])^2 , tau[s[i]])
+          pred[i,y] ~ dnorm(a[s[i]] + b[s[i]]*(YEAR[y]+age[i]) + c[s[i]]*(YEAR[y]+age[i])^2 , tau[s[i]])
+        }
+      }
+    }
+  ")
+
+  jags <- jags.model(
+    mod,
+    data = list(
+      YEAR = c(0,3,6,12), # Year since 1980
+      age = df$IKA80, # Age at 1980
+      fat = df[c("PFDWB80","PFDWB83","PFDWB86","PFDWB92")], # Fat percentage
+      s = df$SP,
+      I = nrow(df)
+    ),
+    n.chains = 4,
+    n.adapt = 300
+  )
+  
+  samps.c <- coda.samples(
+    jags, 
+    variable.names=c("a","b","c","tau"), # "pred"
+    n.iter=N*10,
+    thin=10
+  )
+  
+  samps.j <- jags.samples(
+    jags, 
+    variable.names=c("a","b","c","tau"), # "pred"
+    n.iter=N*10,
+    thin=10
+  )
+
+  #scatterplotMatrix(samps.j$k, main="Elimination constant k")
+    
+#  plot(samps.c)
+
+  age <- 3:30
+  out <- data.frame()
+  for(i in 1:100) {
+    for(j in 1:2) {
+    out <- rbind(out, data.frame(
+      Iter = i,
+      sex = j,
+      x = age,
+      y = samps.j$a[j,i,1] + samps.j$b[j,i,1]*age + samps.j$c[j,i,1]*age^2
+    ))
+    }
+  }
+
+ggplot(out, aes(x=x,y=y,colour=Iter,group=Iter))+geom_line()+facet_wrap(~sex)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
