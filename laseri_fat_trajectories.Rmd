@@ -1,7 +1,7 @@
 ---
 title: "Laseri fat trajectories"
 author: "Jouni Tuomisto"
-date: "23 3 2021"
+date: "2021-03-24"
 output: word_document
 ---
 
@@ -13,9 +13,20 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This project aims to create individual trajectories of fat mass change in individuals in the Laseri study.
 
+### Tasks already performed
+
+1. Create a Bayesian model that predicts the mean trajectory for girls and boys. 
+2. First, use simple polynomial fit with three parameters ax^2 + bx + c.
+3. Use multivariable normal for parameters a, b, c.
+4. Use PFDWB for 1980-1992 and rasvapros01_lasklog for 2001.
+5. R package sme checked but no longer available at CRAN, so other solutions are needed.
+
 ### To be done:
 
-1. 
+1. Decide on the function for fat percentage change.
+2. Decide on the function for individual fat trajectory.
+3. Consider using splines for modelling individual changes in fat percentage. Noora's master's thesis about smoothing splines for non-linear responses may be of help. Possibly useful articles https://doi.org/10.1214/ss/1038425655 https://doi.org/10.1198/1061860043010 
+4. 
 
 ```{r preprocess}
 library(reshape2)
@@ -32,11 +43,11 @@ dfl$year[grepl("01",dfl$Parameter)] <- 2001
 dfl$Parameter <- gsub("(80|83|86|92|01)","",dfl$Parameter)  
 dfl$age <- dfl$year - 1980 + dfl$IKA80
 
-ggplot(dfl[dfl$Parameter=="PFDWB",], aes(x=age, y=Result, colour=year, group=tutkno80))+geom_line()+facet_wrap(~SP)
+ggplot(dfl[dfl$Parameter %in% c("PFDWB","rasvapros_lasklog"),], aes(x=age, y=Result, colour=IKA80, group=tutkno80))+geom_line()+facet_wrap(~SP)
 
-tmp <- dfl[dfl$Parameter=="PFDWB",]
-tmp <- aggregate(tmp["Result"], by = tmp[c("age","SP","year")], FUN=function(x) mean(x, na.rm = TRUE))
-ggplot(tmp, aes(x=age, y=Result, colour=year, group=year))+geom_line()+facet_wrap(~SP)
+tmp <- dfl[dfl$Parameter %in% c("PFDWB","rasvapros_lasklog"),]
+tmp <- aggregate(tmp["Result"], by = tmp[c("age","SP","IKA80")], FUN=function(x) mean(x, na.rm = TRUE))
+ggplot(tmp, aes(x=age, y=Result, colour=IKA80, group=IKA80))+geom_line()+facet_wrap(~SP)
 
 
 ```
@@ -57,21 +68,25 @@ ggplot(tmp, aes(x=age, y=Result, colour=year, group=year))+geom_line()+facet_wra
   
   mod <- textConnection(
     "
-    var a[2], b[2], c[2], fat[I,4], s[I], age[I];
+    var a[2,3], fat[I,5], s[I], age[I]; # , b[2], c[2]
     model{
-      a[1] ~ dnorm(0, 0.01)
-      a[2] ~ dnorm(0, 0.01)
-      b[1] ~ dnorm(0, 0.01)
-      b[2] ~ dnorm(0, 0.01)
-      c[1] ~ dnorm(0, 0.01)
-      c[2] ~ dnorm(0, 0.01)
+#      a[1] ~ dnorm(0, 0.01)
+#      a[2] ~ dnorm(0, 0.01)
+#      b[1] ~ dnorm(0, 0.01)
+#      b[2] ~ dnorm(0, 0.01)
+#      c[1] ~ dnorm(0, 0.01)
+#      c[2] ~ dnorm(0, 0.01)
       tau[1] ~ dgamma(1.0,1.0) 
       tau[2] ~ dgamma(1.0,1.0) 
+      a[1,1:3] ~ dmnorm(c(0,0,0), Omega) # girls
+      a[2,1:3] ~ dmnorm(c(0,0,0), Omega) # boys
+#      muind[i,1:C] <- mu[fis[i],1:C]
 
       for(i in 1:I) { 
         for(y in 1:length(YEAR)) {
-          fat[i,y] ~ dnorm(a[s[i]] + b[s[i]]*(YEAR[y]+age[i]) + c[s[i]]*(YEAR[y]+age[i])^2 , tau[s[i]])
-          pred[i,y] ~ dnorm(a[s[i]] + b[s[i]]*(YEAR[y]+age[i]) + c[s[i]]*(YEAR[y]+age[i])^2 , tau[s[i]])
+          mu[i,y] <- a[s[i],1]*(YEAR[y]+age[i])^2 + a[s[i],2]*(YEAR[y]+age[i]) + a[s[i],3]
+          fat[i,y] ~ dnorm(mu[i,y] , tau[s[i]])
+          pred[i,y] ~ dnorm(mu[i,y] , tau[s[i]])
         }
       }
     }
@@ -80,33 +95,38 @@ ggplot(tmp, aes(x=age, y=Result, colour=year, group=year))+geom_line()+facet_wra
   jags <- jags.model(
     mod,
     data = list(
-      YEAR = c(0,3,6,12), # Year since 1980
+      YEAR = c(0,3,6,12,21), # Year since 1980
       age = df$IKA80, # Age at 1980
-      fat = df[c("PFDWB80","PFDWB83","PFDWB86","PFDWB92")], # Fat percentage
+      fat = df[c("PFDWB80","PFDWB83","PFDWB86","PFDWB92","rasvapros01_lasklog")], # Fat percentage
       s = df$SP,
-      I = nrow(df)
+      I = nrow(df),
+      Omega = diag(3)/1000
     ),
     n.chains = 4,
-    n.adapt = 300
+    n.adapt = 1000
   )
+  
+  update(jags, 1000)
   
   samps.c <- coda.samples(
     jags, 
-    variable.names=c("a","b","c","tau"), # "pred"
+    variable.names=c("a","tau"),
     n.iter=N*10,
     thin=10
   )
   
   samps.j <- jags.samples(
     jags, 
-    variable.names=c("a","b","c","tau"), # "pred"
+    variable.names=c("a","tau", "mu","pred"),
     n.iter=N*10,
     thin=10
   )
 
-  #scatterplotMatrix(samps.j$k, main="Elimination constant k")
+  scatterplotMatrix(t(samps.j$a[1,,,1]), main="Polynomial parameters for girls")
+  scatterplotMatrix(t(samps.j$a[2,,,1]), main="Polynomial parameters for boys")
+  scatterplotMatrix(t(samps.j$tau[,,1]), main="Precision for girls and boys")
     
-#  plot(samps.c)
+#  plot(t(samps.c)) # This works for desktop but not when knitting. Why?
 
   age <- 3:30
   out <- data.frame()
@@ -116,12 +136,18 @@ ggplot(tmp, aes(x=age, y=Result, colour=year, group=year))+geom_line()+facet_wra
       Iter = i,
       sex = j,
       x = age,
-      y = samps.j$a[j,i,1] + samps.j$b[j,i,1]*age + samps.j$c[j,i,1]*age^2
+      y = samps.j$a[j,1,i,1]*age^2 + samps.j$a[j,2,i,1]*age + samps.j$a[j,3,i,1]
     ))
     }
   }
 
 ggplot(out, aes(x=x,y=y,colour=Iter,group=Iter))+geom_line()+facet_wrap(~sex)
+
+tmp <- samps.j$mu[,,1,1]
+colnames(tmp) <- c("pred80","pred83","pred86","pred92","pred01")
+tmp <- data.frame(df,tmp)
+
+ggplot(tmp, aes(x=PFDWB80, y=pred80, colour=SP))+geom_point()
 
 ```
 
