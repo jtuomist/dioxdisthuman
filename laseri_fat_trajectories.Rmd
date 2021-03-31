@@ -1,7 +1,7 @@
 ---
 title: "Laseri fat trajectories"
 author: "Jouni Tuomisto"
-date: "2021-03-24"
+date: "2021-03-31"
 output: word_document
 ---
 
@@ -57,83 +57,97 @@ ggplot(tmp, aes(x=age, y=Result, colour=IKA80, group=IKA80))+geom_line()+facet_w
 
 ```{r bayes}
 
-  library(rjags) # JAGS
-  library(MASS) # mvrnorm
-  library(car) # scatterplotMatrix
-  library(mcmcr) # as.mcarray
-  
-  N <- 100 # params$N # defined as render parameter
-  
-  # Hierarchical Bayes model.
-  
-  mod <- textConnection(
-    "
-    var a[2,3], fat[I,5], s[I], age[I]; # , b[2], c[2]
-    model{
-      taum ~ dgamma(1.0,1.0) # tau for mu
-      tauf[1] ~ dgamma(1.0,1.0) # tau for fat percentage in girls
-      tauf[2] ~ dgamma(1.0,1.0) # tau for fat percentage in boys
-      a[1,1:3] ~ dmnorm(c(0,0,0), Omega) # girls
-      a[2,1:3] ~ dmnorm(c(0,0,0), Omega) # boys
+library(rjags) # JAGS
+library(MASS) # mvrnorm
+library(car) # scatterplotMatrix
+library(mcmcr) # as.mcarray
 
-      for(i in 1:I) { 
-        for(y in 1:length(YEAR)) {
-          mu[i,y] ~ dnorm(a[s[i],1]*(YEAR[y]+age[i])^2 + a[s[i],2]*(YEAR[y]+age[i]) + a[s[i],3], taum)
-          fat[i,y] ~ dnorm(mu[i,y] , tauf[s[i]])
-          pred[i,y] ~ dnorm(mu[i,y] , tauf[s[i]])
-        }
+N <- 100 # params$N # defined as render parameter
+
+################ Hierarchical Bayes model.
+## The model estimates individual fat percentage trajectories in the LASERI cohort.
+## The assumption is that each trajectory follows a second-order polynomial, i.e. mu = a1*x^2 + a2*x + a3.
+## Parameters a1, a2, and a3 are individually adjusted. The actual observed fat percentage is assumed
+## to be normally distributed with mean mu and precision tau, which is sex-dependent.
+
+# Parameters in the model:
+# a1, a2, a3 = parameters of the polynomial function; sex-dependent
+# fat = observed individual fat percentages for five years (based on e.g. skin fold measurements)
+# s = gender of individual
+# age = age of individual at year 1980
+# mu = individually estimated mean (expected value) of fat percentage; depends also on year
+# taum = precision for mu
+# tauf = precision for the actual fat percentage measurement; depends on gender
+# pred = model predictions of individual trajectories; it is not used in estimation
+
+mod <- textConnection(
+  "
+  var a[2,3], fat[I,5], s[I], age[I]; 
+  model{
+    taum ~ dgamma(1.0,1.0) # tau for mu
+    tauf[1] ~ dgamma(1.0,1.0) # tau for fat percentage in girls
+    tauf[2] ~ dgamma(1.0,1.0) # tau for fat percentage in boys
+    a[1,1:3] ~ dmnorm(c(0,0,0), Omega) # girls
+    a[2,1:3] ~ dmnorm(c(0,0,0), Omega) # boys
+
+    for(i in 1:I) { 
+      for(y in 1:length(YEAR)) {
+        mu[i,y] ~ dnorm(a[s[i],1]*(YEAR[y]+age[i])^2 + a[s[i],2]*(YEAR[y]+age[i]) + a[s[i],3], taum)
+        fat[i,y] ~ dnorm(mu[i,y] , tauf[s[i]])
+        pred[i,y] ~ dnorm(mu[i,y] , tauf[s[i]])
       }
     }
-  ")
+  }
+")
 
-  jags <- jags.model(
-    mod,
-    data = list(
-      YEAR = c(0,3,6,12,21), # Year since 1980
-      age = df$IKA80, # Age at 1980
-      fat = df[c("PFDWB80","PFDWB83","PFDWB86","PFDWB92","rasvapros01_lasklog")], # Fat percentage
-      s = df$SP,
-      I = nrow(df),
-      Omega = diag(3)/1000
-    ),
-    n.chains = 4,
-    n.adapt = 1000
-  )
-  
-  update(jags, 1000)
-  
-  samps.c <- coda.samples(
-    jags, 
-    variable.names=c("a","tau"),
-    n.iter=N*10,
-    thin=10
-  )
-  
-  samps.j <- jags.samples(
-    jags, 
-    variable.names=c("a","taum", "tauf", "mu","pred"),
-    n.iter=N*10,
-    thin=10
-  )
+jags <- jags.model(
+  mod,
+  data = list(
+    YEAR = c(0,3,6,12,21), # Year since 1980
+    age = df$IKA80, # Age at 1980
+    fat = df[c("PFDWB80","PFDWB83","PFDWB86","PFDWB92","rasvapros01_lasklog")], # Fat percentage
+    s = df$SP,
+    I = nrow(df),
+    Omega = diag(3)/1000
+  ),
+  n.chains = 4,
+  n.adapt = 1000
+)
 
-  scatterplotMatrix(t(samps.j$a[1,,,1]), main="Polynomial parameters for girls")
-  scatterplotMatrix(t(samps.j$a[2,,,1]), main="Polynomial parameters for boys")
-  scatterplotMatrix(t(samps.j$tauf[,,1]), main="Precision for girls and boys")
-    
+update(jags, 1000)
+
+samps.c <- coda.samples(
+  jags, 
+  variable.names=c("a","tau"),
+  n.iter=N*10,
+  thin=10
+)
+
+samps.j <- jags.samples(
+  jags, 
+  variable.names=c("a","taum", "tauf", "mu","pred"),
+  n.iter=N*10,
+  thin=10
+)
+
+scatterplotMatrix(t(samps.j$a[1,,,1]), main="Polynomial parameters for girls")
+scatterplotMatrix(t(samps.j$a[2,,,1]), main="Polynomial parameters for boys")
+scatterplotMatrix(t(samps.j$tauf[,,1]), main="Precision for girls and boys")
+  
 #  plot(t(samps.c)) # This works for desktop but not when knitting. Why?
 
-  age <- 3:30
-  out <- data.frame()
-  for(i in 1:100) {
-    for(j in 1:2) {
-    out <- rbind(out, data.frame(
-      Iter = i,
-      sex = j,
-      x = age,
-      y = samps.j$a[j,1,i,1]*age^2 + samps.j$a[j,2,i,1]*age + samps.j$a[j,3,i,1]
-    ))
-    }
+age <- 3:30
+out <- data.frame()
+for(i in 1:100) {
+  for(j in 1:2) {
+  out <- rbind(out, data.frame(
+    Iter = i,
+    sex = j,
+    x = age,
+    y = samps.j$a[j,1,i,1]*age^2 + samps.j$a[j,2,i,1]*age + samps.j$a[j,3,i,1]
+  ))
   }
+}
 
 ggplot(out, aes(x=x,y=y,colour=Iter,group=Iter))+geom_line()+facet_wrap(~sex)
 
@@ -147,4 +161,3 @@ ggplot(tmp, aes(x=PFDWB86, y=pred86, colour=SP))+geom_point()
 
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

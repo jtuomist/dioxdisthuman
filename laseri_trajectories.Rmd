@@ -1,7 +1,7 @@
 ---
 title: "LASERI-trajectories"
 author: "Jouni Tuomisto"
-date: '2020-10-07'
+date: '2021-03-31'
 output:
   word_document: default
   html_document: default
@@ -46,7 +46,7 @@ Hypoteesia pitäisi täsmentää. Tällä hetkellä ilmassa on useita, mutta mik
 library(foreign)
 library(psych)
 
-df <- read.spss("~/Documents/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-aineistossa/updated_korjattu_LASERI_data_2020_05_WORKCOPY.sav", to.data.frame = TRUE)
+df <- read.spss("~/R/dioxdisthuman/data/priv/VS _Henkilökohtaiset_POP-trajektorit_LASERI-aineistossa/updated_korjattu_LASERI_data_2020_05_WORKCOPY.sav", to.data.frame = TRUE)
 
 #colnames(df)[grep("PI",toupper(colnames(df)))]
 
@@ -297,18 +297,35 @@ For PCB15380, we can see that
 ## This code builds an iterative model with varying intake
 ## https://github.com/jtuomist/dioxdisthuman/wiki#iterative-model-with-varying-intake-primary-choice
 
-#if(params$run_bayes) {
-  library(OpasnetUtils)
-  library(reshape2)
-  library(rjags) # JAGS
-  library(MASS) # mvrnorm
-  library(car) # scatterplotMatrix
-  library(mcmcr) # as.mcarray
+library(OpasnetUtils)
+library(reshape2)
+library(rjags) # JAGS
+library(MASS) # mvrnorm
+library(car) # scatterplotMatrix
+library(mcmcr) # as.mcarray
+
+N <- params$N # defined as render parameter
   
-  N <- params$N # defined as render parameter
+###########################3# Hierarchical Bayes model.
+## The model estimates POP body burden (B) trajectories at individual level. It calculates iteratively.
+## It calculates B yearly and calculates concentrations C = B / M where M is body fat mass for those years
+## that have C observations available.
+
+#  The variables in the model:
+# See https://github.com/jtuomist/dioxdisthuman/wiki/Modelling-POP-concentrations-in-humans#answer-summary
   
-  # Hierarchical Bayes model.
-  
+#    B = body burden of the POPs at individual level with indices i = individual, t = age, y = calendar year
+#    k = elimination constant elimination constant for each POP from the body. This can also be evaluated in the model, using Ritter et al estimates as priors. Or are there good published k estimates available?
+#    U = 365, constant for unit conversion (1/day --> 1/year)
+#    A = 0.9, absorption fraction of POPs from the gut. Typically close to 1, but more precise POP-specific data may be available.
+#    W = body weight of an individual. Comes from LASERI data.
+#    E = reference daily exposure at year y using parameters a and b.
+#    a = exposure at year 2000
+#    b = 0.07 1/a, rate of decrease of the POP in the environment and intake
+#    P = age-dependent factor to adjust for breast feeding and other age-dependent POP exposure. Should we include individual variation of amount of breast feeding? Yes we should, if that makes a difference for conclusions.
+#    C = observed concentrations of the POPs at individual level (i) at different ages (t).
+#    M = body fat amount (in kg) of an individual. Comes from a separate model.
+
   mod <- textConnection(
     "
     var k, a, b, U, E[61], C[I,H], B[I,H], M[I,H], C1, C2, conc[I,2], SYNT[I], Efish[I],
@@ -317,17 +334,16 @@ For PCB15380, we can see that
     B23[I], B24[I], B25[I], B26[I], B27[I], B28[I], B29[I], B30[I], B31[I], B32[I], B33[I],
     B34[I], B35[I], B36[I], B37[I], B38[I], B39[I], B40[I], B41[I];
     model{
-      #        below.LOQ[i,j] ~ dinterval(-conc[i,j], -LOQ[j])
       k ~ dnorm(0.3, 0.1)
       a ~ dnorm(1, 0.1)
-#      b ~ dnorm(0.1, 0.001)
+#      b ~ dnorm(0.1, 0.001) # assumed constant at the moment
       tau[1] ~ dgamma(1.0,1.0) 
       tau[2] ~ dgamma(1.0,1.0) 
 #      bfish ~ dnorm(1.0,0.001) 
       bfish <- 0
       Efish[] <- fish[] * bfish
       for(year in YEAR) {
-        E[year-1959] <- max(0,a*b*exp(1)*(year-c+1/b)*exp(-b*(year-c+1/b)))
+        E[year-1959] <- a*exp(-b*(year-2000))
       }
       B2[] <-  B1[] * (1 - k) + U * A * W[,1] * (E[SYNT[]-1960+1] + Efish[]) * P[1]
       B3[] <-  B2[] * (1 - k) + U * A * W[,2] * (E[SYNT[]-1960+2] + Efish[]) * P[2]
@@ -432,7 +448,7 @@ For PCB15380, we can see that
       U = U,
       A = A,
       b = b,
-      c = c,
+#      c = c,
       P = P[1:H],
       SYNT = SYNT,
       conc = conc,
@@ -479,7 +495,7 @@ k <- mean(samps.j$k)
 a <- mean(samps.j$a)
 b <- mean(samps.j$b)
 
-E <- pmax(0,a*b*exp(1)*(YEAR-c+1/b)*exp(-b*(YEAR-c+1/b)))
+E <- a*exp(-b*(YEAR-2000))
 B <- matrix(0, nrow=I, ncol=H)
 for(age in 2:H) {
     B[,age] <-  B[,age-1] * (1 - k) + U * A * W[,age-1] * E[SYNT-1963+age] * P[age]
